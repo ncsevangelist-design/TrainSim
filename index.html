@@ -1,0 +1,1008 @@
+<title>大井町線 運転台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Noto+Sans+JP:wght@400;700&display=swap">
+<style>
+  /* Layout: 全画面の3D運転台 + 下端の操作バー。単一の暗い世界観(運転台の室内)を意図的に採用 */
+  :root {
+    --bg: #0b0f14;
+    --panel: #151b23;
+    --line: #2b3441;
+    --fg: #e9eef4;
+    --muted: #94a1b0;
+    --accent: #f18c43;      /* 大井町線のラインカラー(オレンジ) */
+    --ok: #4cc38a;
+    --warn: #f2c14e;
+    --bad: #ef5b5b;
+    --font-ui: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-num: "Barlow Condensed", "Noto Sans JP", sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); overflow: hidden; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #toast {
+    position: fixed; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+    max-width: min(92vw, 640px); padding: 8px 16px; border-radius: 6px;
+    background: rgba(11,15,20,.82); border: 1px solid var(--line); font-size: 15px; font-weight: 700;
+    text-align: center; pointer-events: none; transition: opacity .2s;
+  }
+  #toast[data-k="ok"] { color: var(--ok); } #toast[data-k="warn"] { color: var(--warn); }
+  #toast[data-k="bad"] { color: var(--bad); } #toast[data-k="info"] { color: var(--fg); }
+  #bar {
+    position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; gap: 10px 18px; justify-content: center;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, rgba(11,15,20,.92), rgba(11,15,20,.55)); border-top: 1px solid var(--line);
+  }
+  .grp { display: flex; align-items: center; gap: 6px; }
+  .grp > span { font-size: 12px; color: var(--muted); margin-right: 2px; }
+  button {
+    font: inherit; font-size: 14px; font-weight: 700; color: var(--fg); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 9px 13px; min-height: 40px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.on { background: var(--accent); color: #1a1006; border-color: var(--accent); }
+  button.p { color: var(--ok); } button.b { color: var(--bad); }
+  #notch { font-family: var(--font-num); font-size: 26px; font-weight: 700; min-width: 54px; text-align: center; }
+  #intro {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+    background: rgba(8,11,15,.86); overflow: auto;
+  }
+  #intro .card {
+    width: min(100%, 640px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 24px max(20px, env(safe-area-inset-left, 0px)) 22px;
+  }
+  #intro h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: .04em; }
+  #intro .sub { margin: 0 0 16px; color: var(--accent); font-family: var(--font-num); font-size: 18px; letter-spacing: .08em; }
+  #intro ul { margin: 0 0 16px; padding-left: 1.2em; line-height: 1.75; font-size: 14px; }
+  #intro kbd { font-family: var(--font-num); font-size: 14px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+  #intro .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  #intro .note { margin: 14px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  #vrmsg { font-size: 13px; color: var(--warn); margin: 10px 0 0; min-height: 1.2em; }
+  [hidden] { display: none !important; }
+</style>
+
+<canvas id="c" aria-label="東急大井町線 運転台"></canvas>
+<div id="toast" data-k="info"></div>
+
+<div id="bar">
+  <div class="grp"><span>マスコン</span>
+    <button data-act="b" class="b" title="ブレーキ段を1つ上げる (↓ / S)">B ▲</button>
+    <div id="notch">N</div>
+    <button data-act="p" class="p" title="力行段を1つ上げる (↑ / W)">P ▲</button>
+    <button data-act="n" title="中立 (Space)">N</button>
+  </div>
+  <div class="grp"><span>前後切替</span>
+    <button data-act="rf" id="rf">前</button><button data-act="rn" id="rn">切</button><button data-act="rr" id="rr">後</button>
+  </div>
+  <div class="grp"><span>種別</span>
+    <button data-act="tl" id="tl">各駅停車</button><button data-act="te" id="te">急行</button>
+  </div>
+  <div class="grp"><span>停止許容</span>
+    <button data-act="o3" id="o3">±3m</button><button data-act="o15" id="o15">±1.5m</button><button data-act="o05" id="o05">±0.5m</button>
+  </div>
+  <div class="grp">
+    <button data-act="restart">最初から</button>
+    <button data-act="vr" id="vrb" hidden>VRで運転</button>
+  </div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <h1>大井町線 運転台</h1>
+    <p class="sub">OIMACHI → MIZONOKUCHI　12.4 km</p>
+    <ul>
+      <li>マスコン: 力行 P1〜P4、常用ブレーキ B1〜B7。<kbd>↑</kbd><kbd>↓</kbd> または <kbd>W</kbd><kbd>S</kbd> で1段ずつ、<kbd>Space</kbd> で中立</li>
+      <li>前後切替: <kbd>F</kbd> 前 / <kbd>V</kbd> 切 / <kbd>B</kbd> 後(停止中のみ)。行き過ぎたら「後」でバックして戻る</li>
+      <li>種別: <kbd>T</kbd> で 各駅停車 / 急行(停車中のみ)。<kbd>R</kbd> で最初から</li>
+      <li>CS-ATC の制限速度は運転台のATC表示に出ます。超えると自動でブレーキがかかります</li>
+      <li>ドラッグで見回し、マスコンや各スイッチはクリックまたはドラッグで操作できます</li>
+      <li>VR(Quest): 右スティックを手前で力行・奥でブレーキ / A 前 / B 後 / 左X 種別 / 左Y 最初から / 左スティックで目線の高さ。コントローラーのレイでレバーをつかんでも操作できます</li>
+    </ul>
+    <div class="row">
+      <button id="go" class="on">運転開始</button>
+      <button id="govr" hidden>VRで開始</button>
+    </div>
+    <p id="vrmsg"></p>
+    <p class="note">速度段階・加減速度は実車を参考にした簡易モデルです。停止許容は ±3 m(やさしい)から ±0.5 m まで選べ、速度パネルに「ブレーキ目安」が出ます。駅間距離は東急電鉄の公開データ、二子新地・高津は大井町線の駅間表に無いため省略しています。</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ===== 大井町線 運転シミュレータ: 物理・ATC・停車判定 (DOM/THREE非依存) ===== */
+const STATIONS = [
+  { n: '大井町',   r: 'Oimachi',         km: 0.0,  x: 1, code: 'OM01' },
+  { n: '下神明',   r: 'Shimoshinmei',    km: 0.8,  x: 0, code: 'OM02' },
+  { n: '戸越公園', r: 'Togoshi-koen',    km: 1.5,  x: 0, code: 'OM03' },
+  { n: '中延',     r: 'Nakanobu',        km: 2.1,  x: 0, code: 'OM04' },
+  { n: '荏原町',   r: 'Ebaramachi',      km: 2.7,  x: 0, code: 'OM05' },
+  { n: '旗の台',   r: 'Hatanodai',       km: 3.2,  x: 1, code: 'OM06' },
+  { n: '北千束',   r: 'Kita-senzoku',    km: 4.0,  x: 0, code: 'OM07' },
+  { n: '大岡山',   r: 'Ookayama',        km: 4.8,  x: 1, code: 'OM08' },
+  { n: '緑が丘',   r: 'Midorigaoka',     km: 5.3,  x: 0, code: 'OM09' },
+  { n: '自由が丘', r: 'Jiyugaoka',       km: 6.3,  x: 1, code: 'OM10' },
+  { n: '九品仏',   r: 'Kuhombutsu',      km: 7.1,  x: 0, code: 'OM11' },
+  { n: '尾山台',   r: 'Oyamadai',        km: 7.8,  x: 0, code: 'OM12' },
+  { n: '等々力',   r: 'Todoroki',        km: 8.3,  x: 0, code: 'OM13' },
+  { n: '上野毛',   r: 'Kaminoge',        km: 9.2,  x: 0, code: 'OM14' },
+  { n: '二子玉川', r: 'Futako-tamagawa', km: 10.4, x: 1, code: 'OM15' },
+  { n: '溝の口',   r: 'Mizonokuchi',     km: 12.4, x: 1, code: 'OM16' }
+];
+const STEPS = [0, 25, 45, 65, 75, 95];                 // ATC速度段階 (km/h)
+const POWER = [0, 1.0, 1.8, 2.6, 3.3];                 // P0..P4  加速度 km/h/s (低速域)
+const BRAKE = [0, 0.9, 1.5, 2.1, 2.7, 3.3, 3.9, 4.5];  // B0..B7  減速度 km/h/s
+const TOL = 3.0;          // 停止許容 ±m の既定値(やさしい)
+const ATC_PATTERN = 0.6;  // ATCパターン減速度 m/s^2
+const ATC_BRAKE = 3.3;    // ATC常用ブレーキ km/h/s
+const REV_LIMIT = 15;     // 後退時の制限速度 km/h
+const DWELL = 8;          // 停車時間 s
+
+function stationPos(i) { return STATIONS[i].km * 1000; }
+
+function createSim(type, tol) {
+  return {
+    tol: tol || TOL, s: 0, v: 0, lever: 0, rev: 0, type: type || 'local',
+    tr: 0, br: 0, phase: 'run', lastStn: 0,
+    stopT: 0, dwellT: 0, atcB: false, lim: 45, limPrev: 45, t: 0, moving: false,
+    results: [], atcCount: 0, overruns: 0, overrun: false, backM: 0,
+    msg: '種別を選び、前後切替を「前」にして、力行で発車します', msgK: 'info', ev: []
+  };
+}
+
+function nextStn(o) {
+  for (let i = o.lastStn + 1; i < STATIONS.length; i++) {
+    if (o.type === 'local' || STATIONS[i].x) return i;
+  }
+  return -1;
+}
+
+function calcLimit(o) {
+  if (o.phase !== 'run') return 0;
+  const nx = nextStn(o);
+  if (nx < 0) return 0;
+  const d = stationPos(nx) - o.s;
+  if (d < -2.5) return 0;                                   // 大幅オーバーラン: 前進不可
+  const vp = Math.sqrt(2 * ATC_PATTERN * Math.max(d, 0)) * 3.6;
+  let st = 25;
+  for (const x of STEPS) if (x <= vp) st = Math.max(st, x);
+  const ds = Math.max(o.s - stationPos(o.lastStn), 0);      // 発車後の段階的な速度アップ
+  const vd = Math.sqrt(2 * 1.5 * ds + 12.6 * 12.6) * 3.6;
+  let dl = 45;
+  for (const x of STEPS) if (x <= vd) dl = Math.max(dl, x);
+  return Math.min(st, dl, 95);
+}
+
+function setMsg(o, m, k) { o.msg = m; o.msgK = k || 'info'; }
+
+function setLever(o, n) {
+  n = Math.max(-7, Math.min(4, Math.round(n)));
+  if (n !== o.lever) { o.lever = n; o.ev.push('notch'); }
+}
+
+function setRev(o, r) {
+  if (o.rev === r) return true;
+  if (Math.abs(o.v) > 0.05) { setMsg(o, '走行中は前後切替できません', 'warn'); return false; }
+  o.rev = r; o.ev.push('rev');
+  return true;
+}
+
+function setTol(o, t) {
+  if (Math.abs(o.v) > 0.05 || o.phase === 'finished') { setMsg(o, '停止許容は停車中のみ切り替えられます', 'warn'); return false; }
+  o.tol = t; o.ev.push('rev');
+  setMsg(o, '停止許容 ±' + t + ' m', 'info');
+  return true;
+}
+
+// ブレーキ目安: 今の速度で停止位置に止まるのに必要な減速度から段を逆算
+function brakeAdvice(o) {
+  if (o.phase !== 'run' || o.v < 0.3) return '';
+  const nx = nextStn(o); if (nx < 0) return '';
+  const d = stationPos(nx) - o.s;
+  if (d <= 0) return '';
+  const a = o.v * o.v / (2 * d) * 1.05;
+  if (a < 0.12) return '惰行でOK';
+  for (let k = 1; k <= 7; k++) if (BRAKE[k] / 3.6 >= a) return 'B' + k;
+  return 'B7でも不足';
+}
+
+function setType(o, t) {
+  if (o.type === t) return true;
+  if (Math.abs(o.v) > 0.05 || o.phase === 'finished') { setMsg(o, '停車中のみ種別を切り替えられます', 'warn'); return false; }
+  o.type = t; o.ev.push('rev');
+  const nx = nextStn(o);
+  if (nx >= 0) setMsg(o, (t === 'express' ? '急行' : '各駅停車') + ' に切替。次の停車駅: ' + STATIONS[nx].n, 'info');
+  return true;
+}
+
+function rate(e) {
+  const a = Math.abs(e);
+  return a <= 0.3 ? '◎ ぴたり' : a <= 0.8 ? '○ 良好' : '△ 合格';
+}
+
+function step(o, dt) {
+  const nx = nextStn(o);
+  const tp = nx >= 0 ? stationPos(nx) : stationPos(STATIONS.length - 1);
+  const lim = calcLimit(o);
+  if (lim !== o.limPrev) { o.ev.push(lim < o.limPrev ? 'atc_down' : 'atc_up'); o.limPrev = lim; }
+  o.lim = lim;
+
+  const vk = o.v * 3.6;
+  // --- ATC ブレーキ ---
+  if (o.phase === 'run') {
+    const over = o.v >= 0 ? vk > lim + 1.0 : -vk > REV_LIMIT + 1.0;
+    if (!o.atcB && over) { o.atcB = true; o.atcCount++; o.ev.push('atc_brake'); }
+    if (o.atcB) {
+      const rel = o.v >= 0 ? (vk <= lim - 1.0 || Math.abs(vk) < 0.3) : (-vk <= REV_LIMIT - 1.0);
+      if (rel) o.atcB = false;
+    }
+  } else o.atcB = false;
+
+  // --- ブレーキ ---
+  const man = o.lever < 0 ? BRAKE[-o.lever] : 0;
+  const tgtB = Math.max(man, o.atcB ? ATC_BRAKE : 0);
+  o.br = tgtB > o.br ? Math.min(tgtB, o.br + 3.2 * dt) : Math.max(tgtB, o.br - 7 * dt);
+
+  // --- 力行 ---
+  const fwdBlocked = o.rev > 0 && lim <= 0;
+  const ok = o.lever > 0 && o.rev !== 0 && o.phase === 'run' && !o.atcB && !fwdBlocked;
+  const taper = Math.abs(vk) <= 45 ? 1 : Math.pow(45 / Math.abs(vk), 1.6);
+  const tgtT = ok ? POWER[o.lever] * taper : 0;
+  o.tr = tgtT > o.tr ? Math.min(tgtT, o.tr + 2.2 * dt) : Math.max(tgtT, o.tr - 9 * dt);
+
+  // --- 運動方程式 ---
+  let v = o.v + o.rev * o.tr / 3.6 * dt;
+  const dec = ((0.06 + 0.00003 * vk * vk) / 3.6 + o.br / 3.6) * dt;
+  if (Math.abs(v) <= dec) v = 0; else v -= Math.sign(v) * dec;
+  if (o.rev * o.tr === 0 && Math.abs(v) < 0.01) v = 0;
+  const s0 = o.s;
+  o.v = v;
+  o.s += v * dt;
+  if (o.s < -2) { o.s = -2; o.v = 0; }
+  if (v < 0) o.backM += (s0 - o.s);
+  if (Math.abs(v) > 0.02) o.moving = true;
+  if (o.moving && o.phase !== 'finished') o.t += dt;
+
+  // --- 停止判定 ---
+  const e = o.s - tp;   // 正: 行き過ぎ
+  if (o.phase === 'run' && nx >= 0) {
+    if (Math.abs(o.v) < 0.02) o.stopT += dt; else o.stopT = 0;
+    if (o.stopT > 0.8) {
+      if (Math.abs(e) <= o.tol) {
+        o.results.push({ idx: nx, e: e, over: o.overrun });
+        o.lastStn = nx; o.overrun = false; o.stopT = 0; o.dwellT = 0; o.tr = 0;
+        o.ev.push('door_open');
+        if (nextStn(o) < 0) {
+          o.phase = 'finished';
+          setMsg(o, '終点 ' + STATIONS[nx].n + ' に到着しました', 'ok');
+        } else {
+          o.phase = 'dwell';
+          setMsg(o, STATIONS[nx].n + ' 停車 ' + (e >= 0 ? '+' : '') + e.toFixed(2) + ' m  ' + rate(e), 'ok');
+        }
+      } else if (e > o.tol) {
+        if (!o.overrun) { o.overrun = true; o.overruns++; }
+        setMsg(o, 'オーバーラン +' + e.toFixed(1) + ' m  前後切替を「後」にしてバック', 'bad');
+      } else {
+        setMsg(o, '手前 ' + (-e).toFixed(1) + ' m  力行で少し前へ', 'warn');
+      }
+    }
+  } else if (o.phase === 'dwell') {
+    o.dwellT += dt;
+    o.v = 0;
+    if (o.dwellT >= DWELL) {
+      o.phase = 'run'; o.ev.push('door_close');
+      const n2 = nextStn(o);
+      setMsg(o, 'ドア閉。次は ' + STATIONS[n2].n + (o.rev === 1 ? '' : '  前後切替を「前」へ'), 'info');
+    }
+  }
+  return e;
+}
+
+function summary(o) {
+  const n = o.results.length;
+  const avg = n ? o.results.reduce((a, r) => a + Math.abs(r.e), 0) / n : 0;
+  return { n, avg, atc: o.atcCount, overruns: o.overruns, time: o.t };
+}
+
+if (typeof module !== 'undefined') module.exports = { setTol, brakeAdvice, STATIONS, STEPS, POWER, BRAKE, createSim, step, nextStn, stationPos, setLever, setRev, setType, summary, calcLimit, TOL };
+
+</script>
+<script>
+(function () {
+'use strict';
+const $ = (s) => document.querySelector(s);
+const NUMF = '"Barlow Condensed","Noto Sans JP",sans-serif';
+const JPF = '"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif';
+const COL = { bg: '#0a0f14', line: '#2b3441', fg: '#e9eef4', mut: '#94a1b0', acc: '#f18c43', ok: '#4cc38a', warn: '#f2c14e', bad: '#ef5b5b' };
+
+let sim = createSim('local');
+let started = false;
+
+/* ============ renderer / scene ============ */
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.xr.enabled = true;
+try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) {}
+const SKY = 0xbcd6ec;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(SKY, 160, 1500);
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 3000);
+const dolly = new THREE.Group();            // 列車の位置に追従するリグ
+scene.add(dolly);
+dolly.add(camera);
+camera.position.set(0, 1.2, 0);
+const cab = new THREE.Group();              // 運転台一式(高さ調整はここを動かす)
+dolly.add(cab);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f86, 0.95));
+const sun = new THREE.DirectionalLight(0xfff1d6, 0.9);
+sun.position.set(-60, 120, 40);
+scene.add(sun);
+const cabLight = new THREE.PointLight(0xffffff, 0.5, 6);
+cabLight.position.set(0, 2.0, -0.6);
+cab.add(cabLight);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize); resize();
+
+let seed = 20261014;
+const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
+const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+const RIVER_A = 10620, RIVER_B = 11270, S_END = 12760, S_START = -60;
+const Z = (s) => -s;
+
+/* ============ world ============ */
+function buildWorld() {
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  // バラスト+まくらぎ
+  const tc = document.createElement('canvas'); tc.width = 64; tc.height = 64;
+  const tx = tc.getContext('2d');
+  tx.fillStyle = '#7d7a74'; tx.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < 260; i++) { tx.fillStyle = 'rgba(' + (90 + rnd() * 70 | 0) + ',' + (88 + rnd() * 60 | 0) + ',' + (84 + rnd() * 50 | 0) + ',.8)'; tx.fillRect(rnd() * 64, rnd() * 64, 2, 2); }
+  tx.fillStyle = '#4a4540'; tx.fillRect(2, 26, 60, 14);
+  const bt = new THREE.CanvasTexture(tc); bt.wrapS = bt.wrapT = THREE.RepeatWrapping;
+  const len = S_END - S_START;
+  bt.repeat.set(1, len / 0.65); bt.anisotropy = maxAniso;
+  const ballast = new THREE.Mesh(new THREE.PlaneGeometry(3.4, len), new THREE.MeshLambertMaterial({ map: bt }));
+  ballast.rotation.x = -Math.PI / 2; ballast.position.set(0, 0.0, Z((S_END + S_START) / 2));
+  scene.add(ballast);
+  const railM = new THREE.MeshLambertMaterial({ color: 0xaab2bb });
+  for (const x of [-0.72, 0.72]) { const r = box(0.07, 0.16, len, railM); r.position.set(x, 0.08, Z((S_END + S_START) / 2)); scene.add(r); }
+
+  // 地面(多摩川の部分は欠ける)
+  const gm = mat(0x77806f), cm = mat(0x8b8f91);
+  function land(a, b, m) { const g = box(500, 6, b - a, m); g.position.set(0, -3.25, Z((a + b) / 2)); scene.add(g); }
+  land(S_START, RIVER_A, gm); land(RIVER_B, S_END, gm);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(500, RIVER_B - RIVER_A), new THREE.MeshLambertMaterial({ color: 0x4f7592 }));
+  water.rotation.x = -Math.PI / 2; water.position.set(0, -5.9, Z((RIVER_A + RIVER_B) / 2)); scene.add(water);
+  const girder = box(3.4, 1.4, RIVER_B - RIVER_A, mat(0x6f777e));
+  girder.position.set(0, -0.9, Z((RIVER_A + RIVER_B) / 2)); scene.add(girder);
+  for (let s = RIVER_A + 30; s < RIVER_B; s += 55) { const p = box(2.6, 5.4, 2.2, cm); p.position.set(0, -3.3, Z(s)); scene.add(p); }
+
+  // 架線柱・ビーム・架線
+  const mastM = mat(0x5c6168);
+  const nM = Math.ceil(S_END / 45) + 2;
+  const masts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 6, 0.2), mastM, nM * 2);
+  const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(5.2, 0.14, 0.14), mastM, nM);
+  const m4 = new THREE.Matrix4(); let mi = 0, ai = 0;
+  for (let s = 0; s < S_END; s += 45) {
+    m4.makeTranslation(-2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4);
+    m4.makeTranslation(2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4);
+    m4.makeTranslation(0, 5.6, Z(s)); arms.setMatrixAt(ai++, m4);
+  }
+  masts.count = mi; arms.count = ai; scene.add(masts); scene.add(arms);
+  const wire = box(0.03, 0.03, len, new THREE.MeshBasicMaterial({ color: 0x20252b }));
+  wire.position.set(0, 5.1, Z((S_END + S_START) / 2)); scene.add(wire);
+
+  // 建物
+  const NB = 1700;
+  const bld = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), NB);
+  const pal = [0xd8d2c6, 0xc3c7cb, 0xe3ddd0, 0xb9bfc6, 0xcfc4b4, 0xa9b1b8, 0xe8e4dc, 0xbfae98];
+  const col = new THREE.Color(); let bi = 0;
+  const dummy = new THREE.Object3D();
+  for (let k = 0; k < NB; k++) {
+    const s = rnd() * S_END;
+    if (s > RIVER_A - 40 && s < RIVER_B + 40) continue;
+    const side = rnd() < 0.5 ? -1 : 1;
+    const dist = 9 + rnd() * rnd() * 70;
+    const dense = (s < 9800) ? 1 : 0.45;
+    if (rnd() > dense) continue;
+    const w = 6 + rnd() * 14, d = 7 + rnd() * 18;
+    const h = (s < 9800 ? 5 + rnd() * rnd() * 40 : 4 + rnd() * 14);
+    dummy.position.set(side * (dist + w / 2), h / 2 - 0.25, Z(s));
+    dummy.scale.set(w, h, d); dummy.updateMatrix();
+    bld.setMatrixAt(bi, dummy.matrix);
+    col.setHex(pal[(rnd() * pal.length) | 0]); bld.setColorAt(bi, col); bi++;
+  }
+  bld.count = bi; scene.add(bld);
+
+  // 駅
+  const plM = mat(0xb9b5ad), roofM = mat(0xe9e6df), postM = mat(0x8e949a);
+  let totPosts = 0; const PL = 150;
+  STATIONS.forEach(() => { totPosts += Math.ceil(PL / 12) + 1; });
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), postM, totPosts); let pi = 0;
+  const NS = STATIONS.length;
+  const ribs = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, 0.12), mat(0xc9c5bc), NS * 24); let ri = 0;
+  const marks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.012, 0.5), mat(0x3a78c2), NS * 8); let mki = 0;
+  const dposts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.62, 0.05), postM, NS * 5); let dpi = 0;
+  // ホームの床(1mタイル)・点字ブロック・停止までの距離標
+  const tcv = document.createElement('canvas'); tcv.width = 64; tcv.height = 64;
+  const tcx = tcv.getContext('2d'); tcx.fillStyle = '#cfccc4'; tcx.fillRect(0, 0, 64, 64);
+  tcx.fillStyle = '#a7a49c'; tcx.fillRect(0, 0, 64, 3); tcx.fillRect(0, 0, 3, 64);
+  const tileTex = new THREE.CanvasTexture(tcv); tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping; tileTex.repeat.set(4.4, PL); tileTex.anisotropy = maxAniso;
+  const tileM = new THREE.MeshLambertMaterial({ map: tileTex });
+  const kcv = document.createElement('canvas'); kcv.width = 32; kcv.height = 32;
+  const kcx = kcv.getContext('2d'); kcx.fillStyle = '#e6c200'; kcx.fillRect(0, 0, 32, 32); kcx.fillStyle = '#b89800';
+  for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) { kcx.beginPath(); kcx.arc(8 + a * 16, 8 + b * 16, 4, 0, 7); kcx.fill(); }
+  const tactTex = new THREE.CanvasTexture(kcv); tactTex.wrapS = tactTex.wrapT = THREE.RepeatWrapping; tactTex.repeat.set(2, PL / 0.3); tactTex.anisotropy = maxAniso;
+  const tactM = new THREE.MeshLambertMaterial({ map: tactTex });
+  const distM = [10, 20, 30, 40, 50].map((d) => {
+    const dc = document.createElement('canvas'); dc.width = 192; dc.height = 124; const x = dc.getContext('2d');
+    x.fillStyle = '#f2c14e'; x.fillRect(0, 0, 192, 124); x.fillStyle = '#10305a'; x.fillRect(8, 8, 176, 108);
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.font = '700 28px ' + JPF; x.fillText('手前', 96, 40);
+    x.font = '700 62px ' + NUMF; x.fillText(d + 'm', 96, 100);
+    return new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(dc) });
+  });
+  STATIONS.forEach((st, i) => {
+    const tp = stationPos(i);
+    const pf = box(4.4, 1.0, PL, mat(0x8a8883)); pf.position.set(-3.9, 0.5, Z(tp - PL / 2 + 2)); scene.add(pf);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(4.4, PL), tileM); top.rotation.x = -Math.PI / 2; top.position.set(-3.9, 1.004, Z(tp - PL / 2 + 2)); scene.add(top);
+    const tact = new THREE.Mesh(new THREE.PlaneGeometry(0.6, PL), tactM); tact.rotation.x = -Math.PI / 2; tact.position.set(-2.1, 1.008, Z(tp - PL / 2 + 2)); scene.add(tact);
+    const roof = box(4.8, 0.14, PL - 20, roofM); roof.position.set(-4.0, 4.0, Z(tp - PL / 2 - 8)); scene.add(roof);
+    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { m4.makeTranslation(-4.0, 3.9, Z(s)); ribs.setMatrixAt(ri++, m4); }
+    for (let k = 0; k < 8; k++) { const s = tp - 10 - 20 * k; if (s < tp - PL + 6) break; m4.makeTranslation(-2.9, 1.01, Z(s)); marks.setMatrixAt(mki++, m4); }
+    [10, 20, 30, 40, 50].forEach((d, di) => {
+      const bd = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]); bd.position.set(-1.95, 1.62, Z(tp - d) - 0.04); scene.add(bd);
+      m4.makeTranslation(-1.98, 1.28, Z(tp - d) - 0.05); dposts.setMatrixAt(dpi++, m4);
+    });
+    for (let s = tp - PL + 12; s <= tp - 8; s += 12) { m4.makeTranslation(-5.3, 2.5, Z(s)); posts.setMatrixAt(pi++, m4); }
+    // 駅名標
+    for (const off of [100, 35]) {
+      const sc = document.createElement('canvas'); sc.width = 512; sc.height = 160;
+      const g = sc.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, 512, 160);
+      g.fillStyle = '#f18c43'; g.fillRect(0, 0, 512, 22); g.fillRect(0, 138, 512, 22);
+      g.fillStyle = '#222'; g.textAlign = 'center';
+      g.font = '700 70px ' + JPF; g.fillText(st.n, 256, 96);
+      g.font = '500 26px ' + NUMF; g.fillStyle = '#555'; g.fillText(st.r, 256, 128);
+      g.fillStyle = '#f18c43'; g.fillRect(14, 36, 86, 40);
+      g.fillStyle = '#fff'; g.font = '700 30px ' + NUMF; g.fillText(st.code, 57, 67);
+      const t = new THREE.CanvasTexture(sc); t.anisotropy = maxAniso;
+      const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.56), new THREE.MeshBasicMaterial({ map: t }));
+      sg.rotation.y = Math.PI / 2; sg.position.set(-1.95, 2.5, Z(tp - off)); scene.add(sg);
+      const pole = box(0.08, 1.5, 0.08, postM); pole.position.set(-1.98, 1.75, Z(tp - off)); scene.add(pole);
+    }
+    // 停止位置目標
+    const mc = document.createElement('canvas'); mc.width = 256; mc.height = 160;
+    const mg = mc.getContext('2d');
+    mg.fillStyle = '#f2c14e'; mg.fillRect(0, 0, 256, 160);
+    mg.fillStyle = '#111'; mg.fillRect(8, 8, 240, 144); mg.fillStyle = '#f2c14e'; mg.fillRect(14, 14, 228, 132);
+    mg.fillStyle = '#111'; mg.textAlign = 'center'; mg.font = '700 64px ' + JPF; mg.fillText('停止', 128, 78);
+    mg.font = '700 34px ' + JPF; mg.fillText('位置', 128, 124);
+    const mt = new THREE.CanvasTexture(mc);
+    const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.56), new THREE.MeshBasicMaterial({ map: mt }));
+    mk.position.set(-1.95, 2.0, Z(tp) - 0.05); scene.add(mk);
+    const mp = box(0.08, 1.1, 0.08, postM); mp.position.set(-1.98, 1.55, Z(tp) - 0.06); scene.add(mp);
+    const gm2 = box(0.5, 0.02, 0.12, mat(0xf2c14e)); gm2.position.set(-1.85, 1.03, Z(tp)); scene.add(gm2);
+  });
+  posts.count = pi; scene.add(posts);
+  ribs.count = ri; scene.add(ribs); marks.count = mki; scene.add(marks); dposts.count = dpi; scene.add(dposts);
+}
+
+/* ============ cab ============ */
+const pickables = [];
+const redraws = [];
+
+function makeCanvasPlane(wm, hm, pw, ph, x, y, z, rotX) {
+  const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph;
+  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(wm, hm), new THREE.MeshBasicMaterial({ map: tex }));
+  m.position.set(x, y, z); m.rotation.x = rotX || 0; cab.add(m);
+  return { cv, ctx: cv.getContext('2d'), tex, mesh: m };
+}
+
+function makeBtn(label, w, h, x, z, onClick, isActive) {
+  const pw = 256, ph = Math.round(256 * h / w);
+  const p = makeCanvasPlane(w, h, pw, ph, x, 0.865, z, -1.15);
+  p.mesh.userData.btn = { onClick };
+  pickables.push(p.mesh);
+  p.draw = function () {
+    const c = p.ctx, on = isActive();
+    c.clearRect(0, 0, pw, ph);
+    c.fillStyle = on ? COL.acc : '#1a212b'; c.fillRect(0, 0, pw, ph);
+    c.strokeStyle = on ? '#ffd2a8' : '#3a4553'; c.lineWidth = 6; c.strokeRect(3, 3, pw - 6, ph - 6);
+    c.fillStyle = on ? '#1a1006' : '#dfe6ee'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = '700 ' + Math.round(ph * 0.5) + 'px ' + JPF; c.fillText(label, pw / 2, ph / 2 + 2);
+    p.tex.needsUpdate = true;
+  };
+  p.draw(); redraws.push(p.draw);
+  return p;
+}
+
+function makeLabel(text, w, h, x, z) {
+  const p = makeCanvasPlane(w, h, 256, Math.round(256 * h / w), x, 0.862, z, -1.15);
+  const c = p.ctx; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#9fb0c2';
+  c.font = '700 ' + Math.round(p.cv.height * 0.62) + 'px ' + JPF; c.fillText(text, 128, p.cv.height / 2); p.tex.needsUpdate = true;
+  return p;
+}
+
+const PIV = new THREE.Vector3(-0.65, 0.84, -1.0);   // マスコン支点(運転台座標)
+let stick = null;
+const POWER_AWAY = false;                            // 実車: 手前に引くと力行 / 奥へ押すとブレーキ
+const leverAngle = (n) => (n > 0 ? n * 8 : n * 6) * Math.PI / 180;
+
+function buildCab() {
+  const wall = mat(0x262c33), trim = mat(0x353d47), desk = mat(0x2d343d), floor = mat(0x3a3f45);
+  const put = (m, x, y, z) => { m.position.set(x, y, z); cab.add(m); return m; };
+  // 運転席は車両の左端。前面中央には乗務員扉があり、運転席の正面〜左は柱のない一枚の窓
+  const CX = 0.3, CW = 3.2;                                  // 運転室の中心x・幅 (x: -1.3 〜 1.9)
+  put(box(CW, 0.06, 3.2, floor), CX, -0.03, -1.0);
+  put(box(CW, 0.06, 3.2, wall), CX, 2.25, -1.0);
+  put(box(0.06, 2.3, 3.2, wall), -1.3, 1.1, -1.0);
+  put(box(0.06, 2.3, 3.2, wall), 1.9, 1.1, -1.0);
+  put(box(CW, 2.3, 0.06, wall), CX, 1.1, 0.6);
+  put(box(0.14, 2.3, 0.12, trim), -1.23, 1.1, -1.6);         // 左端の細いAピラー
+  put(box(CW, 0.4, 0.12, trim), CX, 2.05, -1.6);             // 窓上の梁
+  put(box(CW, 0.78, 0.12, trim), CX, 0.39, -1.6);            // 窓下の前面
+  put(box(0.1, 2.3, 0.12, trim), 0.45, 1.1, -1.6);           // 乗務員扉の左枠
+  put(box(0.64, 2.3, 0.1, mat(0x3d4650)), 0.9, 1.1, -1.6);   // 乗務員扉
+  const dg = box(0.3, 0.4, 0.02, new THREE.MeshBasicMaterial({ color: 0x5f7685 })); put(dg, 0.9, 1.55, -1.54);
+  put(box(0.1, 2.3, 0.12, trim), 1.35, 1.1, -1.6);           // 乗務員扉の右枠
+  put(box(CW, 0.08, 0.85, desk), CX, 0.78, -1.17);           // 机
+  put(box(CW - 0.2, 0.78, 0.7, wall), CX, 0.39, -1.2);
+  const hood = box(CW, 0.05, 0.1, trim); put(hood, CX, 0.84, -1.55);
+
+  // マスコン
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.05, 20), mat(0x555d66));
+  base.position.copy(PIV); base.position.y += 0.01; cab.add(base);
+  stick = new THREE.Group(); stick.position.copy(PIV); cab.add(stick);
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.17, 12), mat(0x9aa3ad)); rod.position.y = 0.085; stick.add(rod);
+  const grip = box(0.11, 0.03, 0.045, mat(0x16191d)); grip.position.y = 0.185; stick.add(grip);
+  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.045, 14), mat(0x16191d)); knob.position.y = 0.2; stick.add(knob);
+  const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.3, 10),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = 0.13; hit.userData.lever = true; stick.add(hit); pickables.push(hit);
+
+  // 段表示プレート
+  const plate = makeCanvasPlane(0.5, 0.25, 512, 256, PIV.x + 0.12, PIV.y + 0.105, PIV.z, 0);
+  plate.mesh.rotation.y = Math.PI / 2;
+  const pc = plate.ctx; pc.fillStyle = '#10151b'; pc.fillRect(0, 0, 512, 256);
+  pc.textAlign = 'center'; pc.textBaseline = 'middle';
+  const sg = POWER_AWAY ? 1 : -1;                            // プレート右側 = 奥。力行が手前なら左に力行を描く
+  for (let n = -7; n <= 4; n++) {
+    const a = leverAngle(n) * sg, R = 150;
+    const x1 = 256 + Math.sin(a) * R, y1 = 236 - Math.cos(a) * R, x2 = 256 + Math.sin(a) * (R + 22), y2 = 236 - Math.cos(a) * (R + 22);
+    pc.strokeStyle = n > 0 ? COL.ok : n < 0 ? COL.bad : '#fff'; pc.lineWidth = 5;
+    pc.beginPath(); pc.moveTo(x1, y1); pc.lineTo(x2, y2); pc.stroke();
+    pc.fillStyle = pc.strokeStyle; pc.font = '700 30px ' + NUMF;
+    pc.fillText(n > 0 ? 'P' + n : n < 0 ? 'B' + (-n) : 'N', 256 + Math.sin(a) * (R + 48), 236 - Math.cos(a) * (R + 48));
+  }
+  plate.tex.needsUpdate = true;
+
+  // 前後切替 / 種別 / 最初から
+  makeLabel('前後切替', 0.34, 0.05, -0.9, -1.125);
+  makeBtn('前', 0.085, 0.06, -1.0, -1.0, () => setRev(sim, 1), () => sim.rev === 1);
+  makeBtn('切', 0.085, 0.06, -0.9, -1.0, () => setRev(sim, 0), () => sim.rev === 0);
+  makeBtn('後', 0.085, 0.06, -0.8, -1.0, () => setRev(sim, -1), () => sim.rev === -1);
+  makeLabel('種別', 0.2, 0.05, 0.66, -1.125);
+  makeBtn('各停', 0.1, 0.06, 0.6, -1.0, () => setType(sim, 'local'), () => sim.type === 'local');
+  makeBtn('急行', 0.1, 0.06, 0.72, -1.0, () => setType(sim, 'express'), () => sim.type === 'express');
+  makeBtn('最初から', 0.14, 0.06, 1.02, -1.0, () => restart(), () => false);
+  makeLabel('停止許容', 0.3, 0.05, 1.45, -1.125);
+  makeBtn('3m', 0.1, 0.06, 1.33, -1.0, () => setTol(sim, 3), () => sim.tol === 3);
+  makeBtn('1.5m', 0.1, 0.06, 1.45, -1.0, () => setTol(sim, 1.5), () => sim.tol === 1.5);
+  makeBtn('0.5m', 0.1, 0.06, 1.57, -1.0, () => setTol(sim, 0.5), () => sim.tol === 0.5);
+}
+
+/* ============ メーター類 ============ */
+let atcP, spdP, infoP;
+function buildPanels() {
+  atcP = makeCanvasPlane(0.3, 0.3, 384, 384, -0.3, 0.93, -1.37, -0.55);
+  spdP = makeCanvasPlane(0.4, 0.4, 512, 512, 0.1, 0.94, -1.38, -0.55);
+  infoP = makeCanvasPlane(0.62, 0.31, 768, 384, 0.74, 0.92, -1.37, -0.55);
+}
+
+const fillRR = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+
+function drawATC() {
+  const c = atcP.ctx, W = 384, H = 384;
+  c.fillStyle = COL.bg; c.fillRect(0, 0, W, H);
+  c.strokeStyle = COL.line; c.lineWidth = 4; c.strokeRect(2, 2, W - 4, H - 4);
+  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  c.fillStyle = COL.acc; c.font = '700 34px ' + NUMF; c.fillText('CS-ATC', 18, 44);
+  c.fillStyle = COL.mut; c.font = '500 24px ' + JPF; c.fillText('制限速度 km/h', 150, 42);
+  const lim = sim.lim;
+  // 段階ランプ
+  const steps = [95, 75, 65, 45, 25, 0];
+  steps.forEach((s, i) => {
+    const y = 66 + i * 46, on = (lim === s);
+    c.fillStyle = on ? (s === 0 ? COL.bad : COL.warn) : '#1b232d'; fillRR(c, 18, y, 82, 38, 6); c.fill();
+    c.fillStyle = on ? '#14100a' : '#4b5767'; c.font = '700 30px ' + NUMF; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(String(s), 59, y + 20);
+  });
+  // 大きい数字
+  c.fillStyle = lim === 0 ? COL.bad : COL.warn; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.font = '700 190px ' + NUMF; c.fillText(String(lim), 250, 250);
+  // ランプ
+  const lamp = (x, y, w, txt, on, color) => {
+    c.fillStyle = on ? color : '#1b232d'; fillRR(c, x, y, w, 44, 8); c.fill();
+    c.fillStyle = on ? '#0d0d0d' : '#4b5767'; c.font = '700 26px ' + JPF; c.textBaseline = 'middle'; c.fillText(txt, x + w / 2, y + 23);
+  };
+  lamp(128, 280, 110, 'ATC作動', started, COL.ok);
+  lamp(248, 280, 120, 'ブレーキ', sim.atcB, COL.bad);
+  lamp(128, 332, 110, 'ドア開', sim.phase === 'dwell' || sim.phase === 'finished', COL.warn);
+  lamp(248, 332, 120, sim.rev < 0 ? '後退' : '前進可', sim.rev !== 0, sim.rev < 0 ? COL.bad : COL.ok);
+  atcP.tex.needsUpdate = true;
+}
+
+function drawSpeed() {
+  const c = spdP.ctx, W = 512;
+  c.fillStyle = COL.bg; c.fillRect(0, 0, W, W);
+  c.strokeStyle = COL.line; c.lineWidth = 4; c.strokeRect(2, 2, W - 4, W - 4);
+  const cx = 256, cy = 262, R = 200, a0 = 135 * Math.PI / 180, span = 270 * Math.PI / 180, MAX = 120;
+  const ang = (v) => a0 + span * Math.min(Math.max(v, 0), MAX) / MAX;
+  // 制限速度の範囲
+  c.lineWidth = 16; c.strokeStyle = '#243241'; c.beginPath(); c.arc(cx, cy, R - 6, a0, a0 + span); c.stroke();
+  c.strokeStyle = sim.lim === 0 ? COL.bad : COL.warn; c.lineCap = 'butt';
+  if (sim.lim > 0) { c.beginPath(); c.arc(cx, cy, R - 6, a0, ang(sim.lim)); c.stroke(); }
+  // 目盛
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (let v = 0; v <= MAX; v += 10) {
+    const a = ang(v), big = v % 20 === 0;
+    c.strokeStyle = COL.fg; c.lineWidth = big ? 4 : 2;
+    c.beginPath(); c.moveTo(cx + Math.cos(a) * (R - 28), cy + Math.sin(a) * (R - 28)); c.lineTo(cx + Math.cos(a) * (R - (big ? 50 : 42)), cy + Math.sin(a) * (R - (big ? 50 : 42))); c.stroke();
+    if (big) { c.fillStyle = COL.fg; c.font = '700 30px ' + NUMF; c.fillText(String(v), cx + Math.cos(a) * (R - 76), cy + Math.sin(a) * (R - 76)); }
+  }
+  // 針
+  const vk = Math.abs(sim.v * 3.6), a = ang(vk);
+  c.strokeStyle = COL.acc; c.lineWidth = 8; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(cx - Math.cos(a) * 24, cy - Math.sin(a) * 24); c.lineTo(cx + Math.cos(a) * (R - 38), cy + Math.sin(a) * (R - 38)); c.stroke();
+  c.fillStyle = '#2b3441'; c.beginPath(); c.arc(cx, cy, 18, 0, 7); c.fill();
+  // デジタル
+  c.fillStyle = COL.fg; c.font = '700 96px ' + NUMF; c.fillText(String(Math.round(vk)), cx, cy + 108);
+  c.fillStyle = COL.mut; c.font = '500 26px ' + NUMF; c.fillText('km/h' + (sim.v < -0.02 ? '  BACK' : ''), cx, cy + 156);
+  const adv = brakeAdvice(sim);
+  if (adv) { c.fillStyle = COL.warn; c.font = '700 34px ' + JPF; c.fillText('ブレーキ目安 ' + adv, cx, 490); }
+  spdP.tex.needsUpdate = true;
+}
+
+function notchText() { return sim.lever > 0 ? 'P' + sim.lever : sim.lever < 0 ? 'B' + (-sim.lever) : 'N'; }
+function mmss(t) { const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + String(s).padStart(2, '0'); }
+const kcol = (k) => (k === 'ok' ? COL.ok : k === 'warn' ? COL.warn : k === 'bad' ? COL.bad : COL.fg);
+
+function drawInfo() {
+  const c = infoP.ctx, W = 768, H = 384;
+  c.fillStyle = COL.bg; c.fillRect(0, 0, W, H);
+  c.strokeStyle = COL.line; c.lineWidth = 4; c.strokeRect(2, 2, W - 4, H - 4);
+  c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+  if (sim.phase === 'finished') {
+    const s = summary(sim);
+    c.fillStyle = COL.ok; c.font = '700 54px ' + JPF; c.fillText('溝の口 到着', 28, 76);
+    c.fillStyle = COL.fg; c.font = '500 30px ' + JPF;
+    c.fillText((sim.type === 'express' ? '急行' : '各駅停車') + '　所要 ' + mmss(s.time), 28, 128);
+    c.fillText('停止誤差(平均)  ' + s.avg.toFixed(2) + ' m', 28, 176);
+    c.fillText('ATCブレーキ  ' + s.atc + ' 回　オーバーラン  ' + s.overruns + ' 回', 28, 224);
+    const grade = (s.avg <= 0.5 && s.atc <= 2 && s.overruns === 0) ? 'S' : (s.avg <= 0.9 && s.overruns <= 1) ? 'A' : (s.overruns <= 3) ? 'B' : 'C';
+    c.fillStyle = COL.acc; c.font = '700 150px ' + NUMF; c.textAlign = 'right'; c.fillText(grade, W - 40, 230);
+    c.textAlign = 'left'; c.fillStyle = COL.mut; c.font = '500 24px ' + JPF; c.fillText('「最初から」で再挑戦  (R / 左Y)', 28, 330);
+    infoP.tex.needsUpdate = true; return;
+  }
+  const nx = nextStn(sim), tp = stationPos(nx >= 0 ? nx : STATIONS.length - 1);
+  const d = tp - sim.s;
+  // 種別
+  c.fillStyle = sim.type === 'express' ? COL.bad : COL.ok; fillRR(c, 20, 18, 116, 46, 8); c.fill();
+  c.fillStyle = '#0c0c0c'; c.font = '700 32px ' + JPF; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(sim.type === 'express' ? '急行' : '各停', 78, 42);
+  c.textAlign = 'left'; c.fillStyle = COL.mut; c.font = '500 24px ' + JPF; c.fillText('大井町 → 溝の口', 150, 42);
+  c.textAlign = 'right'; c.fillStyle = COL.fg; c.font = '700 34px ' + NUMF; c.fillText(mmss(sim.t), W - 22, 42);
+  // 次駅
+  c.textAlign = 'left'; c.fillStyle = COL.mut; c.font = '500 22px ' + JPF; c.fillText(sim.phase === 'dwell' ? '停車中' : '次の停車駅', 22, 96);
+  c.textBaseline = 'alphabetic';
+  if (nx >= 0) {
+    c.fillStyle = COL.fg; c.font = '700 58px ' + JPF; c.fillText(STATIONS[nx].n, 22, 158);
+    c.fillStyle = COL.mut; c.font = '500 24px ' + NUMF; c.fillText(STATIONS[nx].r + '  ' + STATIONS[nx].code, 24, 188);
+  }
+  // 残距離
+  c.textAlign = 'right'; c.fillStyle = COL.mut; c.font = '500 22px ' + JPF; c.textBaseline = 'middle'; c.fillText('停止位置まで', W - 30, 96);
+  c.textBaseline = 'alphabetic';
+  const ds = Math.abs(d) < 100 ? d.toFixed(1) : String(Math.round(d));
+  c.fillStyle = d < -sim.tol ? COL.bad : (Math.abs(d) <= sim.tol ? COL.ok : COL.fg);
+  c.font = '700 84px ' + NUMF; c.fillText(ds, W - 74, 168); c.fillStyle = COL.mut; c.font = '500 32px ' + NUMF; c.fillText('m', W - 30, 168);
+  // ノッチ/前後
+  const nt = notchText();
+  c.textAlign = 'center'; c.fillStyle = sim.lever > 0 ? COL.ok : sim.lever < 0 ? COL.bad : COL.fg;
+  c.font = '700 70px ' + NUMF; c.fillText(nt, 360, 258);
+  c.fillStyle = COL.mut; c.font = '500 20px ' + JPF; c.fillText('マスコン', 360, 282);
+  // 段バー
+  for (let n = -7; n <= 4; n++) {
+    const i = n + 7, x = 20 + i * 24, on = (sim.lever === n) || (n < 0 && sim.lever < n) || (n > 0 && sim.lever > n);
+    c.fillStyle = n < 0 ? (on ? COL.bad : '#3a2326') : n > 0 ? (on ? COL.ok : '#1f3329') : (on ? '#fff' : '#2d3743');
+    c.fillRect(x, 214, 20, 52);
+  }
+  c.fillStyle = COL.mut; c.font = '500 18px ' + NUMF; c.textAlign = 'left'; c.fillText('B7', 20, 292); c.fillText('P4', 20 + 11 * 24 - 8, 292);
+  // 前後切替
+  c.textAlign = 'right'; c.fillStyle = COL.mut; c.font = '500 20px ' + JPF; c.fillText('前後切替', W - 28, 214);
+  [['前', 1], ['切', 0], ['後', -1]].forEach((r, i) => {
+    const x = W - 232 + i * 70, on = sim.rev === r[1];
+    c.fillStyle = on ? COL.acc : '#1a212b'; fillRR(c, x, 224, 62, 48, 8); c.fill();
+    c.fillStyle = on ? '#1a1006' : '#7d8a99'; c.textAlign = 'center'; c.font = '700 30px ' + JPF; c.fillText(r[0], x + 31, 258);
+  });
+  // 停止位置ゲージ
+  if (Math.abs(d) < 25) {
+    const gx = 22, gw = 724, gy = 308, sc = 25;
+    c.fillStyle = '#1a212b'; c.fillRect(gx, gy, gw, 14);
+    c.fillStyle = 'rgba(76,195,138,.55)'; c.fillRect(gx + gw / 2 - gw * sim.tol / (2 * sc), gy, gw * sim.tol / sc, 14);
+    const mx = gx + gw / 2 - Math.max(-sc, Math.min(sc, d)) / sc * (gw / 2);
+    c.fillStyle = COL.acc; c.beginPath(); c.moveTo(mx, gy - 6); c.lineTo(mx - 9, gy - 18); c.lineTo(mx + 9, gy - 18); c.closePath(); c.fill();
+  } else {
+    // 路線プログレス
+    const gx = 28, gw = 712, gy = 314;
+    c.strokeStyle = '#3a4553'; c.lineWidth = 4; c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx + gw, gy); c.stroke();
+    STATIONS.forEach((st, i) => {
+      const x = gx + gw * st.km / 12.4, stop = sim.type === 'local' || st.x, done = sim.results.some((r) => r.idx === i) || i === 0 && sim.moving;
+      c.fillStyle = done ? COL.ok : stop ? COL.fg : '#4b5767'; c.beginPath(); c.arc(x, gy, stop ? 7 : 4, 0, 7); c.fill();
+    });
+    const px = gx + gw * Math.max(0, Math.min(1, sim.s / 12400));
+    c.fillStyle = COL.acc; c.beginPath(); c.moveTo(px, gy - 10); c.lineTo(px - 9, gy - 24); c.lineTo(px + 9, gy - 24); c.closePath(); c.fill();
+  }
+  // メッセージ
+  c.textAlign = 'left'; c.fillStyle = kcol(sim.msgK); c.font = '700 25px ' + JPF; c.textBaseline = 'alphabetic';
+  c.fillText(sim.msg, 24, 366, W - 48);
+  infoP.tex.needsUpdate = true;
+}
+
+/* ============ 入力 ============ */
+const raycaster = new THREE.Raycaster();
+const invM = new THREE.Matrix4();
+function leverFromRay(ray) {
+  cab.updateMatrixWorld(true);
+  invM.copy(cab.matrixWorld).invert();
+  const o = ray.origin.clone().applyMatrix4(invM), d = ray.direction.clone().transformDirection(invM);
+  if (Math.abs(d.x) < 1e-4) return;
+  const t = (PIV.x - o.x) / d.x;
+  if (t < 0 || t > 20) return;
+  const py = o.y + d.y * t - PIV.y, pz = o.z + d.z * t - PIV.z;
+  let deg = Math.atan2(POWER_AWAY ? -pz : pz, py) * 180 / Math.PI;
+  const n = deg > 0 ? Math.min(4, Math.round(deg / 8)) : Math.max(-7, Math.round(deg / 6));
+  setLever(sim, n);
+}
+function pickAt(ray) {
+  raycaster.ray.copy(ray);
+  const hits = raycaster.intersectObjects(pickables, false);
+  return hits.length ? hits[0].object : null;
+}
+
+let yaw = 0, pitch = -0.2, look = null, drag = null;
+const ndc = new THREE.Vector2();
+function pointerRay(e) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.ray.clone();
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (renderer.xr.isPresenting) return;
+  canvas.setPointerCapture(e.pointerId);
+  const obj = pickAt(pointerRay(e));
+  if (obj && obj.userData.lever) { drag = 'lever'; leverFromRay(pointerRay(e)); }
+  else if (obj && obj.userData.btn) { obj.userData.btn.onClick(); }
+  else look = { x: e.clientX, y: e.clientY, yaw, pitch };
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (drag === 'lever') leverFromRay(pointerRay(e));
+  else if (look) {
+    yaw = look.yaw - (e.clientX - look.x) * 0.004;
+    pitch = Math.max(-0.9, Math.min(0.6, look.pitch - (e.clientY - look.y) * 0.004));
+  }
+});
+const endPtr = () => { drag = null; look = null; };
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+
+let keyT = 0;
+window.addEventListener('keydown', (e) => {
+  if (!started) return;
+  const k = e.key.toLowerCase(), now = performance.now();
+  if (k === 'arrowup' || k === 'w') { if (now - keyT > 130) { setLever(sim, sim.lever + 1); keyT = now; } e.preventDefault(); }
+  else if (k === 'arrowdown' || k === 's') { if (now - keyT > 130) { setLever(sim, sim.lever - 1); keyT = now; } e.preventDefault(); }
+  else if (k === ' ' || k === '0' || k === 'n') { setLever(sim, 0); e.preventDefault(); }
+  else if (k === 'f') setRev(sim, 1);
+  else if (k === 'v') setRev(sim, 0);
+  else if (k === 'b') setRev(sim, -1);
+  else if (k === 't') setType(sim, sim.type === 'local' ? 'express' : 'local');
+  else if (k === 'r') restart();
+});
+
+document.querySelectorAll('#bar [data-act]').forEach((b) => b.addEventListener('click', () => {
+  const a = b.dataset.act;
+  if (a === 'p') setLever(sim, sim.lever + 1);
+  else if (a === 'b') setLever(sim, sim.lever - 1);
+  else if (a === 'n') setLever(sim, 0);
+  else if (a === 'rf') setRev(sim, 1);
+  else if (a === 'rn') setRev(sim, 0);
+  else if (a === 'rr') setRev(sim, -1);
+  else if (a === 'tl') setType(sim, 'local');
+  else if (a === 'te') setType(sim, 'express');
+  else if (a === 'o3') setTol(sim, 3);
+  else if (a === 'o15') setTol(sim, 1.5);
+  else if (a === 'o05') setTol(sim, 0.5);
+  else if (a === 'restart') restart();
+  else if (a === 'vr') enterVR();
+}));
+
+function restart() { const t = sim.type, tl = sim.tol; sim = createSim(t, tl); lastFinished = false; }
+let lastFinished = false;
+
+/* ============ 音 ============ */
+const snd = { ctx: null };
+function startAudio() {
+  if (snd.ctx) { try { snd.ctx.resume(); } catch (e) {} return; }
+  try {
+    const A = window.AudioContext || window.webkitAudioContext; const ctx = new A(); snd.ctx = ctx;
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const mkNoise = (type, f, q) => { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q || 0.7; const g = ctx.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(ctx.destination); s.start(); return { g, fl }; };
+    snd.roll = mkNoise('bandpass', 300, 0.6);
+    snd.squeal = mkNoise('highpass', 3200, 1.5);
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 80;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const og = ctx.createGain(); og.gain.value = 0; osc.connect(lp); lp.connect(og); og.connect(ctx.destination); osc.start();
+    snd.osc = osc; snd.og = og;
+  } catch (e) { snd.ctx = null; }
+}
+function beep(f, dur, vol, when) {
+  if (!snd.ctx) return;
+  const c = snd.ctx, t = c.currentTime + (when || 0);
+  const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+}
+function playEv(ev) {
+  if (ev === 'door_open') { beep(880, 0.35, 0.18); beep(660, 0.5, 0.18, 0.32); }
+  else if (ev === 'door_close') { beep(660, 0.3, 0.18); beep(880, 0.3, 0.18, 0.28); beep(660, 0.3, 0.18, 0.56); }
+  else if (ev === 'atc_down') beep(1200, 0.12, 0.12);
+  else if (ev === 'atc_up') beep(1500, 0.08, 0.08);
+  else if (ev === 'atc_brake') { beep(520, 0.18, 0.2); beep(520, 0.18, 0.2, 0.28); }
+  else if (ev === 'notch' || ev === 'rev') beep(300, 0.04, 0.06);
+}
+function updateAudio() {
+  if (!snd.ctx || !snd.roll) return;
+  const t = snd.ctx.currentTime, vk = Math.abs(sim.v * 3.6);
+  snd.roll.g.gain.setTargetAtTime(Math.min(0.32, vk / 95 * 0.32), t, 0.1);
+  snd.roll.fl.frequency.setTargetAtTime(200 + vk * 9, t, 0.1);
+  snd.og.gain.setTargetAtTime(sim.tr > 0.05 ? Math.min(0.09, 0.03 + sim.tr * 0.02) : 0, t, 0.08);
+  snd.osc.frequency.setTargetAtTime(70 + vk * 7, t, 0.12);
+  const sq = (sim.br > 0.5 && sim.v > 0.2 && sim.v < 7) ? Math.min(0.08, sim.br * 0.02) : 0;
+  snd.squeal.g.gain.setTargetAtTime(sq, t, 0.08);
+}
+
+/* ============ VR ============ */
+const ctrls = [];
+const rayLine = () => new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1.2)]), new THREE.LineBasicMaterial({ color: 0xf18c43 }));
+function setupControllers() {
+  for (let i = 0; i < 2; i++) {
+    const c = renderer.xr.getController(i);
+    c.add(rayLine());
+    const body = box(0.04, 0.04, 0.12, mat(0x222831)); body.position.z = 0.03; c.add(body);
+    c.userData.grab = false;
+    const down = () => {
+      const o = new THREE.Vector3(), q = new THREE.Quaternion(), dir = new THREE.Vector3(0, 0, -1);
+      c.getWorldPosition(o); c.getWorldQuaternion(q); dir.applyQuaternion(q);
+      const ray = new THREE.Ray(o, dir), obj = pickAt(ray);
+      if (obj && obj.userData.lever) c.userData.grab = true;
+      else if (obj && obj.userData.btn) obj.userData.btn.onClick();
+    };
+    c.addEventListener('selectstart', down); c.addEventListener('squeezestart', down);
+    const up = () => { c.userData.grab = false; };
+    c.addEventListener('selectend', up); c.addEventListener('squeezeend', up);
+    dolly.add(c); ctrls.push(c);
+  }
+}
+const padPrev = {}; let stickT = 0;
+function pollPads(dt) {
+  const s = renderer.xr.getSession && renderer.xr.getSession();
+  if (!s) return;
+  for (const src of s.inputSources) {
+    const gp = src.gamepad; if (!gp) continue;
+    const h = src.handedness, ax = gp.axes, y = ax.length > 3 ? ax[3] : 0;
+    const edge = (i) => { const p = !!(gp.buttons[i] && gp.buttons[i].pressed), key = h + i, r = p && !padPrev[key]; padPrev[key] = p; return r; };
+    stickT -= dt;
+    if (h === 'right') {
+      if (Math.abs(y) < 0.4) stickT = 0;
+      else if (Math.abs(y) > 0.7 && stickT <= 0) { setLever(sim, sim.lever + (y > 0 ? 1 : -1)); stickT = 0.25; pulse(gp); }   // 手前に引く=力行
+      if (edge(4)) setRev(sim, sim.rev === 1 ? 0 : 1);
+      if (edge(5)) setRev(sim, sim.rev === -1 ? 0 : -1);
+    } else if (h === 'left') {
+      if (Math.abs(y) > 0.25) cab.position.y = Math.max(-0.5, Math.min(0.5, cab.position.y - y * 0.4 * dt));
+      if (edge(4)) setType(sim, sim.type === 'local' ? 'express' : 'local');
+      if (edge(5)) restart();
+    }
+  }
+}
+function pulse(gp) { try { gp.hapticActuators && gp.hapticActuators[0] && gp.hapticActuators[0].pulse(0.3, 30); } catch (e) {} }
+function dragLevers() {
+  ctrls.forEach((c) => {
+    if (!c.userData.grab) return;
+    const o = new THREE.Vector3(), q = new THREE.Quaternion(), dir = new THREE.Vector3(0, 0, -1);
+    c.getWorldPosition(o); c.getWorldQuaternion(q); dir.applyQuaternion(q);
+    const before = sim.lever; leverFromRay(new THREE.Ray(o, dir));
+    if (sim.lever !== before) { const s = renderer.xr.getSession(); if (s) for (const src of s.inputSources) if (src.gamepad) pulse(src.gamepad); }
+  });
+}
+
+let xrSession = null, xrOK = false;
+async function enterVR() {
+  startAudio();
+  const msg = $('#vrmsg');
+  try {
+    const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    xrSession = s; camera.position.set(0, 0, 0);
+    await renderer.xr.setSession(s);
+    s.addEventListener('end', () => { xrSession = null; camera.position.set(0, 1.2, 0); $('#bar').hidden = false; });
+    $('#bar').hidden = true; $('#intro').hidden = true; started = true;
+  } catch (e) {
+    camera.position.set(0, 1.2, 0);
+    if (msg) msg.textContent = 'VRを開始できませんでした(' + (e && e.name ? e.name : 'error') + ')。HTTPSで直接ホストしたページをQuestブラウザで開いてください。';
+    showToast('VRを開始できませんでした', 'warn');
+  }
+}
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
+    xrOK = !!ok;
+    if (ok) { $('#vrb').hidden = false; $('#govr').hidden = false; }
+    else $('#vrmsg').textContent = 'このブラウザではWebXR(VR)が使えないため、デスクトップ表示で動作します。';
+  }).catch(() => {});
+} else $('#vrmsg').textContent = 'このブラウザではWebXR(VR)が使えないため、デスクトップ表示で動作します。';
+$('#govr').addEventListener('click', () => enterVR());
+$('#go').addEventListener('click', () => { $('#intro').hidden = true; started = true; startAudio(); });
+
+/* ============ トースト/ループ ============ */
+let toastT = 0, lastMsg = '';
+function showToast(m, k) { const t = $('#toast'); t.textContent = m; t.dataset.k = k || 'info'; t.style.opacity = 1; toastT = 6; }
+
+let last = performance.now(), hudT = 0;
+function frame() {
+  const now = performance.now(); let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (started) {
+    const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n;
+    for (let i = 0; i < n; i++) step(sim, h);
+    for (const ev of sim.ev) playEv(ev); sim.ev.length = 0;
+    if (renderer.xr.isPresenting) { pollPads(dt); dragLevers(); }
+    if (sim.msg !== lastMsg) { lastMsg = sim.msg; showToast(sim.msg, sim.msgK); }
+    if (sim.phase === 'finished' && !lastFinished) { lastFinished = true; }
+  }
+  toastT -= dt; if (toastT < 0) $('#toast').style.opacity = 0;
+  dolly.position.set(0, 1.1, -sim.s);   // 運転室の床はレール面より約1.1m高い
+  if (!renderer.xr.isPresenting) camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  if (stick) stick.rotation.x = -(POWER_AWAY ? 1 : -1) * leverAngle(sim.lever);
+  hudT -= dt;
+  if (hudT <= 0) {
+    hudT = 0.08; drawATC(); drawSpeed(); drawInfo(); redraws.forEach((f) => f());
+    $('#notch').textContent = notchText();
+    ['rf', 'rn', 'rr'].forEach((id, i) => $('#' + id).classList.toggle('on', sim.rev === [1, 0, -1][i]));
+    ['o3','o15','o05'].forEach((id,i)=>$('#'+id).classList.toggle('on', sim.tol === [3,1.5,0.5][i]));
+    $('#tl').classList.toggle('on', sim.type === 'local'); $('#te').classList.toggle('on', sim.type === 'express');
+  }
+  updateAudio();
+  renderer.render(scene, camera);
+}
+
+/* ============ 起動 ============ */
+function boot() {
+  buildWorld(); buildCab(); buildPanels(); setupControllers();
+  drawATC(); drawSpeed(); drawInfo();
+  renderer.setAnimationLoop(frame);
+}
+const fl = Promise.all([
+  document.fonts.load('700 40px "Noto Sans JP"', '大井町線急行各停停止位置'),
+  document.fonts.load('700 40px "Barlow Condensed"', '0123456789OM')
+]).catch(() => {});
+Promise.race([fl, new Promise((r) => setTimeout(r, 2500))]).then(boot);
+})();
+</script>
