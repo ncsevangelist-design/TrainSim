@@ -118,14 +118,14 @@ const STATIONS = [
   { n: '中延',     r: 'Nakanobu',        km: 2.1,  x: 0, code: 'OM04' },
   { n: '荏原町',   r: 'Ebaramachi',      km: 2.7,  x: 0, code: 'OM05' },
   { n: '旗の台',   r: 'Hatanodai',       km: 3.2,  x: 1, code: 'OM06' },
-  { n: '北千束',   r: 'Kita-senzoku',    km: 4.0,  x: 0, code: 'OM07' },
+  { n: '北千束',   r: 'Kita-senzoku',    km: 4.0,  x: 0, code: 'OM07', side: 1 },
   { n: '大岡山',   r: 'Ookayama',        km: 4.8,  x: 1, code: 'OM08' },
   { n: '緑が丘',   r: 'Midorigaoka',     km: 5.3,  x: 0, code: 'OM09' },
   { n: '自由が丘', r: 'Jiyugaoka',       km: 6.3,  x: 1, code: 'OM10' },
-  { n: '九品仏',   r: 'Kuhombutsu',      km: 7.1,  x: 0, code: 'OM11' },
+  { n: '九品仏',   r: 'Kuhombutsu',      km: 7.1,  x: 0, code: 'OM11', side: 1 },
   { n: '尾山台',   r: 'Oyamadai',        km: 7.8,  x: 0, code: 'OM12' },
-  { n: '等々力',   r: 'Todoroki',        km: 8.3,  x: 0, code: 'OM13' },
-  { n: '上野毛',   r: 'Kaminoge',        km: 9.2,  x: 0, code: 'OM14' },
+  { n: '等々力',   r: 'Todoroki',        km: 8.3,  x: 0, code: 'OM13', side: 1 },
+  { n: '上野毛',   r: 'Kaminoge',        km: 9.2,  x: 0, code: 'OM14', side: 1 },
   { n: '二子玉川', r: 'Futako-tamagawa', km: 10.4, x: 1, code: 'OM15' },
   { n: '溝の口',   r: 'Mizonokuchi',     km: 12.4, x: 1, code: 'OM16' }
 ];
@@ -392,9 +392,11 @@ function buildWorld() {
   const masts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 6, 0.2), mastM, nM * 2);
   const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(5.2, 0.14, 0.14), mastM, nM);
   const m4 = new THREE.Matrix4(); let mi = 0, ai = 0;
+  const platSide = (s) => { for (let i = 0; i < STATIONS.length; i++) { const q = stationPos(i); if (s >= q - 148 && s <= q + 4) return STATIONS[i].side || -1; } return 0; };
   for (let s = 0; s < S_END; s += 45) {
-    m4.makeTranslation(-2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4);
-    m4.makeTranslation(2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4);
+    const ps = platSide(s);                                   // ホームと重なる側の架線柱は立てない
+    if (ps !== -1) { m4.makeTranslation(-2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4); }
+    if (ps !== 1) { m4.makeTranslation(2.6, 3, Z(s)); masts.setMatrixAt(mi++, m4); }
     m4.makeTranslation(0, 5.6, Z(s)); arms.setMatrixAt(ai++, m4);
   }
   masts.count = mi; arms.count = ai; scene.add(masts); scene.add(arms);
@@ -452,17 +454,18 @@ function buildWorld() {
   });
   STATIONS.forEach((st, i) => {
     const tp = stationPos(i);
-    const pf = box(4.4, 1.0, PL, mat(0x8a8883)); pf.position.set(-3.9, 0.5, Z(tp - PL / 2 + 2)); scene.add(pf);
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(4.4, PL), tileM); top.rotation.x = -Math.PI / 2; top.position.set(-3.9, 1.004, Z(tp - PL / 2 + 2)); scene.add(top);
-    const tact = new THREE.Mesh(new THREE.PlaneGeometry(0.6, PL), tactM); tact.rotation.x = -Math.PI / 2; tact.position.set(-2.1, 1.008, Z(tp - PL / 2 + 2)); scene.add(tact);
-    const roof = box(4.8, 0.14, PL - 20, roofM); roof.position.set(-4.0, 4.0, Z(tp - PL / 2 - 8)); scene.add(roof);
-    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { m4.makeTranslation(-4.0, 3.9, Z(s)); ribs.setMatrixAt(ri++, m4); }
-    for (let k = 0; k < 8; k++) { const s = tp - 10 - 20 * k; if (s < tp - PL + 6) break; m4.makeTranslation(-2.9, 1.01, Z(s)); marks.setMatrixAt(mki++, m4); }
+    const sd = st.side || -1;   // ホーム側: -1=左, +1=右(島式)
+    const pf = box(4.4, 1.0, PL, mat(0x8a8883)); pf.position.set(sd * 3.9, 0.5, Z(tp - PL / 2 + 2)); scene.add(pf);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(4.4, PL), tileM); top.rotation.x = -Math.PI / 2; top.position.set(sd * 3.9, 1.004, Z(tp - PL / 2 + 2)); scene.add(top);
+    const tact = new THREE.Mesh(new THREE.PlaneGeometry(0.6, PL), tactM); tact.rotation.x = -Math.PI / 2; tact.position.set(sd * 2.1, 1.008, Z(tp - PL / 2 + 2)); scene.add(tact);
+    const roof = box(4.8, 0.14, PL - 20, roofM); roof.position.set(sd * 4.0, 4.0, Z(tp - PL / 2 - 8)); scene.add(roof);
+    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { m4.makeTranslation(sd * 4.0, 3.9, Z(s)); ribs.setMatrixAt(ri++, m4); }
+    for (let k = 0; k < 8; k++) { const s = tp - 10 - 20 * k; if (s < tp - PL + 6) break; m4.makeTranslation(sd * 2.9, 1.01, Z(s)); marks.setMatrixAt(mki++, m4); }
     [10, 20, 30, 40, 50].forEach((d, di) => {
-      const bd = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]); bd.position.set(-1.95, 1.62, Z(tp - d) - 0.04); scene.add(bd);
-      m4.makeTranslation(-1.98, 1.28, Z(tp - d) - 0.05); dposts.setMatrixAt(dpi++, m4);
+      const bd = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]); bd.position.set(sd * 1.95, 1.62, Z(tp - d) - 0.04); scene.add(bd);
+      m4.makeTranslation(sd * 1.98, 1.28, Z(tp - d) - 0.05); dposts.setMatrixAt(dpi++, m4);
     });
-    for (let s = tp - PL + 12; s <= tp - 8; s += 12) { m4.makeTranslation(-5.3, 2.5, Z(s)); posts.setMatrixAt(pi++, m4); }
+    for (let s = tp - PL + 12; s <= tp - 8; s += 12) { m4.makeTranslation(sd * 5.3, 2.5, Z(s)); posts.setMatrixAt(pi++, m4); }
     // 駅名標
     for (const off of [100, 35]) {
       const sc = document.createElement('canvas'); sc.width = 512; sc.height = 160;
@@ -476,8 +479,8 @@ function buildWorld() {
       g.fillStyle = '#fff'; g.font = '700 30px ' + NUMF; g.fillText(st.code, 57, 67);
       const t = new THREE.CanvasTexture(sc); t.anisotropy = maxAniso;
       const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.56), new THREE.MeshBasicMaterial({ map: t }));
-      sg.rotation.y = Math.PI / 2; sg.position.set(-1.95, 2.5, Z(tp - off)); scene.add(sg);
-      const pole = box(0.08, 1.5, 0.08, postM); pole.position.set(-1.98, 1.75, Z(tp - off)); scene.add(pole);
+      sg.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; sg.position.set(sd * 1.95, 2.5, Z(tp - off)); scene.add(sg);
+      const pole = box(0.08, 1.5, 0.08, postM); pole.position.set(sd * 1.98, 1.75, Z(tp - off)); scene.add(pole);
     }
     // 停止位置目標
     const mc = document.createElement('canvas'); mc.width = 256; mc.height = 160;
@@ -488,9 +491,9 @@ function buildWorld() {
     mg.font = '700 34px ' + JPF; mg.fillText('位置', 128, 124);
     const mt = new THREE.CanvasTexture(mc);
     const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.56), new THREE.MeshBasicMaterial({ map: mt }));
-    mk.position.set(-1.95, 2.0, Z(tp) - 0.05); scene.add(mk);
-    const mp = box(0.08, 1.1, 0.08, postM); mp.position.set(-1.98, 1.55, Z(tp) - 0.06); scene.add(mp);
-    const gm2 = box(0.5, 0.02, 0.12, mat(0xf2c14e)); gm2.position.set(-1.85, 1.03, Z(tp)); scene.add(gm2);
+    mk.position.set(sd * 1.95, 2.0, Z(tp) - 0.05); scene.add(mk);
+    const mp = box(0.08, 1.1, 0.08, postM); mp.position.set(sd * 1.98, 1.55, Z(tp) - 0.06); scene.add(mp);
+    const gm2 = box(0.5, 0.02, 0.12, mat(0xf2c14e)); gm2.position.set(sd * 1.85, 1.03, Z(tp)); scene.add(gm2);
   });
   posts.count = pi; scene.add(posts);
   ribs.count = ri; scene.add(ribs); marks.count = mki; scene.add(marks); dposts.count = dpi; scene.add(dposts);
