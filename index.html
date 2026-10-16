@@ -96,8 +96,8 @@
       <li>前後切替: <kbd>F</kbd> 前 / <kbd>V</kbd> 切 / <kbd>B</kbd> 後(停止中のみ)。行き過ぎたら「後」でバックして戻る</li>
       <li>種別: <kbd>T</kbd> で 各駅停車 / 急行(停車中のみ)。<kbd>R</kbd> で最初から</li>
       <li>CS-ATC の制限速度は運転台のATC表示に出ます。超えると自動でブレーキがかかります</li>
-      <li>ドラッグで見回し、マスコンや各スイッチはクリックまたはドラッグで操作できます</li>
-      <li>VR(Quest): 右スティックを手前で力行・奥でブレーキ / A 前 / B 後 / 左X 種別 / 左Y 最初から / 左スティックで目線の高さ。コントローラーのレイでレバーをつかんでも操作できます</li>
+      <li>ドラッグで見回せます。マスコンは運転席の真正面で、上下にドラッグすると動きます(下へ=手前に引く=力行、上へ=奥へ押す=ブレーキ)。スイッチはクリックで操作できます</li>
+      <li>VR(Quest): 右スティックを手前で力行・奥でブレーキ / A 前 / B 後 / 左X 種別 / 左Y 最初から / 左スティックで目線の高さ。トリガーでレバーをつかみ、手前に引くと力行、奥へ押すとブレーキ(両手どちらでも可)</li>
     </ul>
     <div class="row">
       <button id="go" class="on">運転開始</button>
@@ -118,19 +118,19 @@ const STATIONS = [
   { n: '中延',     r: 'Nakanobu',        km: 2.1,  x: 0, code: 'OM04' },
   { n: '荏原町',   r: 'Ebaramachi',      km: 2.7,  x: 0, code: 'OM05' },
   { n: '旗の台',   r: 'Hatanodai',       km: 3.2,  x: 1, code: 'OM06' },
-  { n: '北千束',   r: 'Kita-senzoku',    km: 4.0,  x: 0, code: 'OM07', side: 1, curve: 0.0012 },
+  { n: '北千束',   r: 'Kita-senzoku',    km: 4.0,  x: 0, code: 'OM07', side: 1 },
   { n: '大岡山',   r: 'Ookayama',        km: 4.8,  x: 1, code: 'OM08' },
   { n: '緑が丘',   r: 'Midorigaoka',     km: 5.3,  x: 0, code: 'OM09' },
   { n: '自由が丘', r: 'Jiyugaoka',       km: 6.3,  x: 1, code: 'OM10' },
-  { n: '九品仏',   r: 'Kuhombutsu',      km: 7.1,  x: 0, code: 'OM11', side: 1, curve: -0.0012 },
+  { n: '九品仏',   r: 'Kuhombutsu',      km: 7.1,  x: 0, code: 'OM11', side: 1 },
   { n: '尾山台',   r: 'Oyamadai',        km: 7.8,  x: 0, code: 'OM12' },
-  { n: '等々力',   r: 'Todoroki',        km: 8.3,  x: 0, code: 'OM13', side: 1, curve: 0.0012 },
-  { n: '上野毛',   r: 'Kaminoge',        km: 9.2,  x: 0, code: 'OM14', side: 1, curve: -0.0012 },
+  { n: '等々力',   r: 'Todoroki',        km: 8.3,  x: 0, code: 'OM13', side: 1 },
+  { n: '上野毛',   r: 'Kaminoge',        km: 9.2,  x: 0, code: 'OM14', side: 1 },
   { n: '二子玉川', r: 'Futako-tamagawa', km: 10.4, x: 1, code: 'OM15' },
   { n: '溝の口',   r: 'Mizonokuchi',     km: 12.4, x: 1, code: 'OM16' }
 ];
 const STEPS = [0, 25, 45, 65, 75, 95];                 // ATC速度段階 (km/h)
-const POWER = [0, 1.0, 1.8, 2.6, 3.3];                 // P0..P4  加速度 km/h/s (低速域)
+const POWER = [0, 1.2, 2.2, 3.1, 4.0];                 // P0..P4  加速度 km/h/s (低速域)
 const BRAKE = [0, 0.9, 1.5, 2.1, 2.7, 3.3, 3.9, 4.5];  // B0..B7  減速度 km/h/s
 const TOL = 3.0;          // 停止許容 ±m の既定値(やさしい)
 const ATC_BRAKE = 3.3;    // ATC常用ブレーキ km/h/s
@@ -245,7 +245,7 @@ function step(o, dt) {
   // --- 力行 ---
   const fwdBlocked = o.rev > 0 && lim <= 0;
   const ok = o.lever > 0 && o.rev !== 0 && o.phase === 'run' && !o.atcB && !fwdBlocked;
-  const taper = Math.abs(vk) <= 45 ? 1 : Math.pow(45 / Math.abs(vk), 1.6);
+  const taper = Math.abs(vk) <= 50 ? 1 : Math.pow(50 / Math.abs(vk), 1.15);   // 高速域でも加速が落ちすぎないように
   const tgtT = ok ? POWER[o.lever] * taper : 0;
   o.tr = tgtT > o.tr ? Math.min(tgtT, o.tr + 2.2 * dt) : Math.max(tgtT, o.tr - 9 * dt);
 
@@ -357,30 +357,29 @@ const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
 const RIVER_A = 10620, RIVER_B = 11270, S_END = 12760, S_START = -60;
 const Z = (s) => -s;
 
-/* ============ 線形(曲線ホーム) ============ */
-// 島式ホームの駅は、ホームに沿って線路ごと緩くカーブさせ、通過後に逆カーブで元の方向へ戻す
-const CURVES = [];
+/* ============ 線形(島式ホーム) ============ */
+// 島式ホームは両端が約3m・中央が約10mの細長い楕円形。
+// 線路はホームに沿って横へ膨らみ(進行方向に左→右→左のカーブ)、通過後に元の軌道へ戻る。
+const ISL_PRE = 165, ISL_LEN = 185;                 // 膨らみ区間: 停止位置の165m手前から185m
+const PLAT_BACK = 150, PLAT_FWD = 5;                // ホーム: 停止位置の150m手前〜5m先(7両=140m + 余裕)
+const PLAT_END_W = 3, PLAT_MID_W = 10, PLAT_EDGE = 1.7, PLAT_STD_W = 4.4;
+const ISL = {};                                     // 駅番号 → 島式ホームの形状
 STATIONS.forEach((st, i) => {
-  if (!st.curve) return;
+  if (st.side !== 1) return;
   const tp = stationPos(i);
-  CURVES.push({ a: tp - 165, b: tp + 5, k: st.curve });
-  CURVES.push({ a: tp + 25, b: tp + 195, k: -st.curve });
+  const bEnd = Math.pow(Math.sin(Math.PI * (ISL_PRE - PLAT_BACK) / ISL_LEN), 2);   // ホーム端での膨らみ量
+  ISL[i] = { a: tp - ISL_PRE, bEnd: bEnd, D: ((PLAT_MID_W - PLAT_END_W) / 2) / (1 - bEnd) };
 });
-const sstep = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
-const curvAt = (s) => { let k = 0; for (const c of CURVES) k += c.k * sstep((s - c.a) / 25) * sstep((c.b - s) / 25); return k; };
-const PS0 = -200, PN = Math.ceil(S_END + 400);
-const PX = new Float64Array(PN + 3), PZ = new Float64Array(PN + 3), PPSI = new Float64Array(PN + 3);
-(function () {
-  let x = 0, z = -PS0, psi = 0;                        // 直線なら z = -s
-  for (let i = 0; i <= PN + 1; i++) {
-    PX[i] = x; PZ[i] = z; PPSI[i] = psi;
-    const psi2 = psi + curvAt(PS0 + i + 0.5), pm = (psi + psi2) / 2;
-    x += Math.sin(pm); z -= Math.cos(pm); psi = psi2;
-  }
-})();
-function P(s) {
-  const f = Math.max(0, Math.min(PN, s - PS0)), i = Math.floor(f), u = f - i;
-  return { x: PX[i] + (PX[i + 1] - PX[i]) * u, z: PZ[i] + (PZ[i + 1] - PZ[i]) * u, psi: PPSI[i] + (PPSI[i + 1] - PPSI[i]) * u };
+function islB(o, s) { const t = (s - o.a) / ISL_LEN; return (t <= 0 || t >= 1) ? 0 : Math.pow(Math.sin(Math.PI * t), 2); }
+function islD1(o, s) { const t = (s - o.a) / ISL_LEN; return (t <= 0 || t >= 1) ? 0 : o.D * Math.PI / ISL_LEN * Math.sin(2 * Math.PI * t); }
+function P(s) {                                     // 線路中心線(横ずれと向き)。ホームの膨らみ分だけ左へ
+  let x = 0, d1 = 0;
+  for (const k in ISL) { const o = ISL[k]; x -= o.D * islB(o, s); d1 -= islD1(o, s); }
+  return { x: x, z: -s, psi: Math.atan(d1) };
+}
+function platW(i, s) {                              // ホームの幅(島式は中央で膨らむ)
+  const o = ISL[i]; if (!o) return PLAT_STD_W;
+  return Math.max(PLAT_END_W, PLAT_END_W + 2 * o.D * (islB(o, s) - o.bEnd));
 }
 function loc(s, lx) { const p = P(s); return [p.x + Math.cos(p.psi) * lx, p.z + Math.sin(p.psi) * lx, p.psi]; }
 function put(o, lx, ly, s, yaw) { const l = loc(s, lx); o.position.set(l[0], ly, l[1]); o.rotation.y = -l[2] + (yaw || 0); scene.add(o); return o; }
@@ -427,7 +426,7 @@ function buildWorld() {
   const masts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 6, 0.2), mastM, nM * 2);
   const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(5.2, 0.14, 0.14), mastM, nM);
   const m4 = new THREE.Matrix4(); let mi = 0, ai = 0;
-  const platSide = (s) => { for (let i = 0; i < STATIONS.length; i++) { const q = stationPos(i); if (s >= q - 148 && s <= q + 4) return STATIONS[i].side || -1; } return 0; };
+  const platSide = (s) => { for (let i = 0; i < STATIONS.length; i++) { const q = stationPos(i); if (s >= q - 152 && s <= q + 7) return STATIONS[i].side || -1; } return 0; };
   for (let s = 0; s < S_END; s += 45) {
     const ps = platSide(s);                                   // ホームと重なる側の架線柱は立てない
     if (ps !== -1) inst(masts, mi++, -2.6, 3, s);
@@ -457,7 +456,7 @@ function buildWorld() {
 
   // 駅
   const roofM = mat(0xe9e6df), postM = mat(0x8e949a);
-  const PL = 150, PSEG = 5, NPS = PL / PSEG, NRF = 26;
+  const PL = 150, PSEG = 5, NPS = 31, NRF = 26;
   const NS = STATIONS.length;
   const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), postM, NS * 14); let pi = 0;
   const ribs = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, 0.12), mat(0xc9c5bc), NS * 24); let ri = 0;
@@ -496,18 +495,19 @@ function buildWorld() {
     const tp = stationPos(i);
     const sd = st.side || -1;   // ホーム側: -1=左, +1=右(島式)
     const faceY = sd < 0 ? Math.PI / 2 : -Math.PI / 2;
-    for (let j = 0; j < NPS; j++) {                                   // ホームは5mずつ線形に沿って並べる
-      const s = tp - 148 + PSEG / 2 + PSEG * j;
-      inst(pbase, pbi, sd * 3.9, 0.5, s); inst(ptop, pbi, sd * 3.9, 1.004, s); inst(ptact, pbi, sd * 2.1, 1.008, s); pbi++;
+    const isl = !!ISL[i];
+    for (let j = 0; j < NPS; j++) {                                   // ホームは5mずつ、線形と幅の変化に沿って並べる
+      const s = tp - PLAT_BACK + PSEG / 2 + PSEG * j, w = platW(i, s), c = sd * (PLAT_EDGE + w / 2);
+      inst(pbase, pbi, c, 0.5, s, 0, w / 4.4); inst(ptop, pbi, c, 1.004, s, 0, w / 4.4); inst(ptact, pbi, sd * 2.1, 1.008, s); pbi++;
     }
-    for (let j = 0; j < NRF; j++) inst(proof, pri++, sd * 4.0, 4.0, tp - 143 + PSEG / 2 + PSEG * j);
-    for (let s = tp - PL + 8; s <= tp - 14; s += 6) inst(ribs, ri++, sd * 4.0, 3.9, s);
+    for (let j = 0; j < NRF; j++) { const s = tp - 143 + PSEG / 2 + PSEG * j, w = platW(i, s); inst(proof, pri++, sd * (PLAT_EDGE + w / 2), 4.0, s, 0, (w + 0.4) / 4.8); }
+    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { const w = platW(i, s); inst(ribs, ri++, sd * (PLAT_EDGE + w / 2), 3.9, s, 0, (w + 0.4) / 4.8); }
     for (let k = 0; k < 8; k++) { const s = tp - 10 - 20 * k; if (s < tp - PL + 6) break; inst(marks, mki++, sd * 2.9, 1.01, s); }
     [10, 20, 30, 40, 50].forEach((d, di) => {
       put(new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]), sd * 1.95, 1.62, tp - d + 0.04);
       inst(dposts, dpi++, sd * 1.98, 1.28, tp - d + 0.05);
     });
-    for (let s = tp - PL + 12; s <= tp - 8; s += 12) inst(posts, pi++, sd * 5.3, 2.5, s);
+    for (let s = tp - PL + 12; s <= tp - 8; s += 12) inst(posts, pi++, isl ? sd * (PLAT_EDGE + platW(i, s) / 2) : sd * 5.3, 2.5, s);
     // 駅名標
     for (const off of [100, 35]) {
       const sc = document.createElement('canvas'); sc.width = 512; sc.height = 160;
@@ -571,7 +571,7 @@ function makeLabel(text, w, h, x, z) {
   return p;
 }
 
-const PIV = new THREE.Vector3(-0.65, 0.84, -1.0);   // マスコン支点(運転台座標)
+const PIV = new THREE.Vector3(0, 0.84, -0.62);   // マスコン支点(運転台座標)
 let stick = null;
 const POWER_AWAY = false;                            // 実車: 手前に引くと力行 / 奥へ押すとブレーキ
 const leverAngle = (n) => (n > 0 ? n * 8 : n * 6) * Math.PI / 180;
@@ -598,58 +598,58 @@ function buildCab() {
   put(box(0.64, 2.3, 0.1, mat(0x3d4650)), 0.9, 1.1, -1.6);   // 乗務員扉
   const dg = box(0.3, 0.4, 0.02, new THREE.MeshBasicMaterial({ color: 0x5f7685 })); put(dg, 0.9, 1.55, -1.54);
   put(box(0.1, 2.3, 0.12, trim), 1.35, 1.1, -1.6);           // 乗務員扉の右枠
-  put(box(CW, 0.08, 0.85, desk), CX, 0.78, -1.17);           // 机
-  put(box(CW - 0.2, 0.78, 0.7, wall), CX, 0.39, -1.2);
+  put(box(CW, 0.08, 1.2, desk), CX, 0.78, -0.995);           // 机(手前まで張り出す)
+  put(box(CW - 0.2, 0.78, 1.2, wall), CX, 0.39, -0.995);
   const hood = box(CW, 0.05, 0.1, trim); put(hood, CX, 0.84, -1.55);
 
-  // マスコン
+  // マスコン: 運転席の真正面。両手で握れるT字ハンドル
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.05, 20), mat(0x555d66));
   base.position.copy(PIV); base.position.y += 0.01; cab.add(base);
   stick = new THREE.Group(); stick.position.copy(PIV); cab.add(stick);
-  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.17, 12), mat(0x9aa3ad)); rod.position.y = 0.085; stick.add(rod);
-  const grip = box(0.11, 0.03, 0.045, mat(0x16191d)); grip.position.y = 0.185; stick.add(grip);
-  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.045, 14), mat(0x16191d)); knob.position.y = 0.2; stick.add(knob);
-  const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.3, 10),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.16, 12), mat(0x9aa3ad)); rod.position.y = 0.08; stick.add(rod);
+  const bar = box(0.3, 0.03, 0.045, mat(0x16191d)); bar.position.y = 0.175; stick.add(bar);
+  for (const sx of [-1, 1]) {
+    const g = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.09, 14), mat(0x232a31));
+    g.rotation.z = Math.PI / 2; g.position.set(sx * 0.12, 0.175, 0); stick.add(g);
+  }
+  const hit = box(0.36, 0.3, 0.16, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.position.y = 0.13; hit.userData.lever = true; stick.add(hit); pickables.push(hit);
 
-  // 段表示プレート
-  const plate = makeCanvasPlane(0.5, 0.25, 512, 256, PIV.x + 0.12, PIV.y + 0.105, PIV.z, 0);
-  plate.mesh.rotation.y = Math.PI / 2;
-  const pc = plate.ctx; pc.fillStyle = '#10151b'; pc.fillRect(0, 0, 512, 256);
-  pc.textAlign = 'center'; pc.textBaseline = 'middle';
-  const sg = POWER_AWAY ? 1 : -1;                            // プレート右側 = 奥。力行が手前なら左に力行を描く
-  for (let n = -7; n <= 4; n++) {
-    const a = leverAngle(n) * sg, R = 150;
-    const x1 = 256 + Math.sin(a) * R, y1 = 236 - Math.cos(a) * R, x2 = 256 + Math.sin(a) * (R + 22), y2 = 236 - Math.cos(a) * (R + 22);
-    pc.strokeStyle = n > 0 ? COL.ok : n < 0 ? COL.bad : '#fff'; pc.lineWidth = 5;
-    pc.beginPath(); pc.moveTo(x1, y1); pc.lineTo(x2, y2); pc.stroke();
-    pc.fillStyle = pc.strokeStyle; pc.font = '700 30px ' + NUMF;
-    pc.fillText(n > 0 ? 'P' + n : n < 0 ? 'B' + (-n) : 'N', 256 + Math.sin(a) * (R + 48), 236 - Math.cos(a) * (R + 48));
-  }
-  plate.tex.needsUpdate = true;
+  // 段表示(机の上、レバーの右。奥=ブレーキ B7 … 手前=力行 P4)
+  const strip = makeCanvasPlane(0.1, 0.44, 160, 704, PIV.x + 0.24, 0.832, PIV.z, -Math.PI / 2);
+  const drawStrip = () => {
+    const c = strip.ctx; c.fillStyle = '#10151b'; c.fillRect(0, 0, 160, 704);
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '700 40px ' + NUMF;
+    for (let n = -7; n <= 4; n++) {
+      const y = (n + 7) * (704 / 12), on = (n === sim.lever), col = n > 0 ? COL.ok : n < 0 ? COL.bad : '#ffffff';
+      if (on) { c.fillStyle = col; c.fillRect(6, y + 3, 148, 704 / 12 - 6); }
+      c.fillStyle = on ? '#0b0f14' : col; c.fillText(n > 0 ? 'P' + n : n < 0 ? 'B' + (-n) : 'N', 80, y + 704 / 24);
+    }
+    strip.tex.needsUpdate = true;
+  };
+  drawStrip(); redraws.push(drawStrip);
 
   // 前後切替 / 種別 / 最初から
-  makeLabel('前後切替', 0.34, 0.05, -0.9, -1.125);
-  makeBtn('前', 0.085, 0.06, -1.0, -1.0, () => setRev(sim, 1), () => sim.rev === 1);
-  makeBtn('切', 0.085, 0.06, -0.9, -1.0, () => setRev(sim, 0), () => sim.rev === 0);
-  makeBtn('後', 0.085, 0.06, -0.8, -1.0, () => setRev(sim, -1), () => sim.rev === -1);
-  makeLabel('種別', 0.2, 0.05, 0.66, -1.125);
-  makeBtn('各停', 0.1, 0.06, 0.6, -1.0, () => setType(sim, 'local'), () => sim.type === 'local');
-  makeBtn('急行', 0.1, 0.06, 0.72, -1.0, () => setType(sim, 'express'), () => sim.type === 'express');
-  makeBtn('最初から', 0.14, 0.06, 1.02, -1.0, () => restart(), () => false);
-  makeLabel('停止許容', 0.3, 0.05, 1.45, -1.125);
-  makeBtn('3m', 0.1, 0.06, 1.33, -1.0, () => setTol(sim, 3), () => sim.tol === 3);
-  makeBtn('1.5m', 0.1, 0.06, 1.45, -1.0, () => setTol(sim, 1.5), () => sim.tol === 1.5);
-  makeBtn('0.5m', 0.1, 0.06, 1.57, -1.0, () => setTol(sim, 0.5), () => sim.tol === 0.5);
+  makeLabel('前後切替', 0.34, 0.05, -0.9, -1.0);
+  makeBtn('前', 0.085, 0.06, -1.0, -0.9, () => setRev(sim, 1), () => sim.rev === 1);
+  makeBtn('切', 0.085, 0.06, -0.9, -0.9, () => setRev(sim, 0), () => sim.rev === 0);
+  makeBtn('後', 0.085, 0.06, -0.8, -0.9, () => setRev(sim, -1), () => sim.rev === -1);
+  makeLabel('種別', 0.2, 0.05, 0.66, -1.0);
+  makeBtn('各停', 0.1, 0.06, 0.6, -0.9, () => setType(sim, 'local'), () => sim.type === 'local');
+  makeBtn('急行', 0.1, 0.06, 0.72, -0.9, () => setType(sim, 'express'), () => sim.type === 'express');
+  makeBtn('最初から', 0.14, 0.06, 1.02, -0.9, () => restart(), () => false);
+  makeLabel('停止許容', 0.3, 0.05, 1.45, -1.0);
+  makeBtn('3m', 0.1, 0.06, 1.33, -0.9, () => setTol(sim, 3), () => sim.tol === 3);
+  makeBtn('1.5m', 0.1, 0.06, 1.45, -0.9, () => setTol(sim, 1.5), () => sim.tol === 1.5);
+  makeBtn('0.5m', 0.1, 0.06, 1.57, -0.9, () => setTol(sim, 0.5), () => sim.tol === 0.5);
 }
 
 /* ============ メーター類 ============ */
 let atcP, spdP, infoP;
 function buildPanels() {
-  atcP = makeCanvasPlane(0.3, 0.3, 384, 384, -0.3, 0.93, -1.37, -0.55);
-  spdP = makeCanvasPlane(0.4, 0.4, 512, 512, 0.1, 0.94, -1.38, -0.55);
-  infoP = makeCanvasPlane(0.62, 0.31, 768, 384, 0.74, 0.92, -1.37, -0.55);
+  atcP = makeCanvasPlane(0.3, 0.3, 384, 384, -0.5, 0.93, -1.37, -0.55);
+  spdP = makeCanvasPlane(0.4, 0.4, 512, 512, 0.5, 0.94, -1.38, -0.55);
+  infoP = makeCanvasPlane(0.62, 0.31, 768, 384, 1.08, 0.92, -1.37, -0.55);
 }
 
 const fillRR = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
@@ -804,25 +804,13 @@ function drawInfo() {
 /* ============ 入力 ============ */
 const raycaster = new THREE.Raycaster();
 const invM = new THREE.Matrix4();
-function leverFromRay(ray) {
-  cab.updateMatrixWorld(true);
-  invM.copy(cab.matrixWorld).invert();
-  const o = ray.origin.clone().applyMatrix4(invM), d = ray.direction.clone().transformDirection(invM);
-  if (Math.abs(d.x) < 1e-4) return;
-  const t = (PIV.x - o.x) / d.x;
-  if (t < 0 || t > 20) return;
-  const py = o.y + d.y * t - PIV.y, pz = o.z + d.z * t - PIV.z;
-  let deg = Math.atan2(POWER_AWAY ? -pz : pz, py) * 180 / Math.PI;
-  const n = deg > 0 ? Math.min(4, Math.round(deg / 8)) : Math.max(-7, Math.round(deg / 6));
-  setLever(sim, n);
-}
 function pickAt(ray) {
   raycaster.ray.copy(ray);
   const hits = raycaster.intersectObjects(pickables, false);
   return hits.length ? hits[0].object : null;
 }
 
-let yaw = 0, pitch = -0.2, look = null, drag = null;
+let yaw = 0, pitch = -0.2, look = null, drag = null, leverY0 = 0, leverN0 = 0;
 const ndc = new THREE.Vector2();
 function pointerRay(e) {
   const r = canvas.getBoundingClientRect();
@@ -834,12 +822,12 @@ canvas.addEventListener('pointerdown', (e) => {
   if (renderer.xr.isPresenting) return;
   canvas.setPointerCapture(e.pointerId);
   const obj = pickAt(pointerRay(e));
-  if (obj && obj.userData.lever) { drag = 'lever'; leverFromRay(pointerRay(e)); }
+  if (obj && obj.userData.lever) { drag = 'lever'; leverY0 = e.clientY; leverN0 = sim.lever; }
   else if (obj && obj.userData.btn) { obj.userData.btn.onClick(); }
   else look = { x: e.clientX, y: e.clientY, yaw, pitch };
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (drag === 'lever') leverFromRay(pointerRay(e));
+  if (drag === 'lever') setLever(sim, leverN0 + Math.round((e.clientY - leverY0) / 22));   // 下へドラッグ=手前に引く=力行
   else if (look) {
     yaw = look.yaw - (e.clientX - look.x) * 0.004;
     pitch = Math.max(-0.9, Math.min(0.6, look.pitch - (e.clientY - look.y) * 0.004));
@@ -938,7 +926,7 @@ function setupControllers() {
       const o = new THREE.Vector3(), q = new THREE.Quaternion(), dir = new THREE.Vector3(0, 0, -1);
       c.getWorldPosition(o); c.getWorldQuaternion(q); dir.applyQuaternion(q);
       const ray = new THREE.Ray(o, dir), obj = pickAt(ray);
-      if (obj && obj.userData.lever) c.userData.grab = true;
+      if (obj && obj.userData.lever) { c.userData.grab = true; c.userData.z0 = c.position.z; c.userData.n0 = sim.lever; }
       else if (obj && obj.userData.btn) obj.userData.btn.onClick();
     };
     c.addEventListener('selectstart', down); c.addEventListener('squeezestart', down);
@@ -972,9 +960,8 @@ function pulse(gp) { try { gp.hapticActuators && gp.hapticActuators[0] && gp.hap
 function dragLevers() {
   ctrls.forEach((c) => {
     if (!c.userData.grab) return;
-    const o = new THREE.Vector3(), q = new THREE.Quaternion(), dir = new THREE.Vector3(0, 0, -1);
-    c.getWorldPosition(o); c.getWorldQuaternion(q); dir.applyQuaternion(q);
-    const before = sim.lever; leverFromRay(new THREE.Ray(o, dir));
+    const before = sim.lever;
+    setLever(sim, c.userData.n0 + Math.round((c.position.z - c.userData.z0) / 0.03));   // 手前に引く=力行、奥へ押す=ブレーキ
     if (sim.lever !== before) { const s = renderer.xr.getSession(); if (s) for (const src of s.inputSources) if (src.gamepad) pulse(src.gamepad); }
   });
 }
