@@ -96,6 +96,7 @@
       <li>前後切替: <kbd>F</kbd> 前 / <kbd>V</kbd> 切 / <kbd>B</kbd> 後(停止中のみ)。行き過ぎたら「後」でバックして戻る</li>
       <li>種別: <kbd>T</kbd> で 各駅停車 / 急行(停車中のみ)。<kbd>R</kbd> で最初から</li>
       <li>CS-ATC の制限速度は運転台のATC表示に出ます。超えると自動でブレーキがかかります</li>
+      <li>対向線を、溝の口発・大井町行の6020系(7両、全駅停車)が約5分間隔で走ります</li>
       <li>ドラッグで見回せます。マスコンは運転席の真正面で、上下にドラッグすると動きます(下へ=手前に引く=力行、上へ=奥へ押す=ブレーキ)。スイッチはクリックで操作できます</li>
       <li>VR(Quest): 右スティックを手前で力行・奥でブレーキ / A 前 / B 後 / 左X 種別 / 左Y 最初から / 左スティックで目線の高さ。トリガーでレバーをつかみ、手前に引くと力行、奥へ押すとブレーキ(両手どちらでも可)</li>
     </ul>
@@ -381,6 +382,18 @@ function platW(i, s) {                              // ホームの幅(島式は
   const o = ISL[i]; if (!o) return PLAT_STD_W;
   return Math.max(PLAT_END_W, PLAT_END_W + 2 * o.D * (islB(o, s) - o.bEnd));
 }
+const OPP_STD = 3.8, OPP_RAMP = 70;                // 対向線路との間隔(通常3.8m)。島式ホームの駅では広がる
+const sstep = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+function oppLx(s) {                                 // 対向線路の中心(自列車の線路中心からの横位置)
+  let lx = OPP_STD;
+  for (const k in ISL) {
+    const tp = stationPos(+k);
+    const g = sstep((s - (tp - PLAT_BACK - OPP_RAMP)) / OPP_RAMP) * sstep(((tp + PLAT_FWD + OPP_RAMP) - s) / OPP_RAMP);
+    if (g > 0) lx += g * (PLAT_EDGE * 2 + platW(+k, s) - OPP_STD);
+  }
+  return lx;
+}
+function oppYaw(s) { return -Math.atan((oppLx(s + 1) - oppLx(s - 1)) / 2); }
 function loc(s, lx) { const p = P(s); return [p.x + Math.cos(p.psi) * lx, p.z + Math.sin(p.psi) * lx, p.psi]; }
 function put(o, lx, ly, s, yaw) { const l = loc(s, lx); o.position.set(l[0], ly, l[1]); o.rotation.y = -l[2] + (yaw || 0); scene.add(o); return o; }
 const dm = new THREE.Object3D();
@@ -409,6 +422,14 @@ function buildWorld() {
     inst(ballast, j, 0, 0, s); inst(rails, j * 2, -0.72, 0.08, s); inst(rails, j * 2 + 1, 0.72, 0.08, s); inst(wires, j, 0, 5.1, s);
   }
   scene.add(ballast); scene.add(rails); scene.add(wires);
+  const ballast2 = new THREE.InstancedMesh(ballast.geometry, ballast.material, nSeg);
+  const rails2 = new THREE.InstancedMesh(rails.geometry, rails.material, nSeg * 2);
+  const wires2 = new THREE.InstancedMesh(wires.geometry, wires.material, nSeg);
+  for (let j = 0; j < nSeg; j++) {
+    const s = S_START + SEG / 2 + SEG * j, lo = oppLx(s), yw = oppYaw(s);
+    inst(ballast2, j, lo, 0, s, yw); inst(rails2, j * 2, lo - 0.72, 0.08, s, yw); inst(rails2, j * 2 + 1, lo + 0.72, 0.08, s, yw); inst(wires2, j, lo, 5.1, s, yw);
+  }
+  scene.add(ballast2); scene.add(rails2); scene.add(wires2);
 
   // 地面(多摩川の部分は欠ける)
   const gm = mat(0x77806f), cm = mat(0x8b8f91);
@@ -429,9 +450,9 @@ function buildWorld() {
   const platSide = (s) => { for (let i = 0; i < STATIONS.length; i++) { const q = stationPos(i); if (s >= q - 152 && s <= q + 7) return STATIONS[i].side || -1; } return 0; };
   for (let s = 0; s < S_END; s += 45) {
     const ps = platSide(s);                                   // ホームと重なる側の架線柱は立てない
-    if (ps !== -1) inst(masts, mi++, -2.6, 3, s);
-    if (ps !== 1) inst(masts, mi++, 2.6, 3, s);
-    inst(arms, ai++, 0, 5.6, s);
+    const lo = oppLx(s), lm = ps === -1 ? -6.8 : -2.6, rm = ps === -1 ? lo + 6.8 : lo + 2.6;   // 両線の外側(ホームがある側はホームの外)
+    inst(masts, mi++, lm, 3, s); inst(masts, mi++, rm, 3, s);
+    inst(arms, ai++, (lm + rm) / 2, 5.6, s, 0, (rm - lm) / 5.2);
   }
   masts.count = mi; arms.count = ai; scene.add(masts); scene.add(arms);
 
@@ -458,7 +479,7 @@ function buildWorld() {
   const roofM = mat(0xe9e6df), postM = mat(0x8e949a);
   const PL = 150, PSEG = 5, NPS = 31, NRF = 26;
   const NS = STATIONS.length;
-  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), postM, NS * 14); let pi = 0;
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), postM, NS * 24); let pi = 0;
   const ribs = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, 0.12), mat(0xc9c5bc), NS * 24); let ri = 0;
   const marks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.012, 0.5), mat(0x3a78c2), NS * 8); let mki = 0;
   const dposts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.62, 0.05), postM, NS * 5); let dpi = 0;
@@ -471,10 +492,10 @@ function buildWorld() {
   const kcx = kcv.getContext('2d'); kcx.fillStyle = '#e6c200'; kcx.fillRect(0, 0, 32, 32); kcx.fillStyle = '#b89800';
   for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) { kcx.beginPath(); kcx.arc(8 + a * 16, 8 + b * 16, 4, 0, 7); kcx.fill(); }
   const tactTex = new THREE.CanvasTexture(kcv); tactTex.wrapS = tactTex.wrapT = THREE.RepeatWrapping; tactTex.repeat.set(2, (PSEG + 0.1) / 0.3); tactTex.anisotropy = maxAniso;
-  const pbase = new THREE.InstancedMesh(new THREE.BoxGeometry(4.4, 1.0, PSEG + 0.1), mat(0x8a8883), NS * NPS);
-  const ptop = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tileTex }), NS * NPS);
-  const ptact = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.6, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tactTex }), NS * NPS);
-  const proof = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, PSEG + 0.1), roofM, NS * NRF);
+  const pbase = new THREE.InstancedMesh(new THREE.BoxGeometry(4.4, 1.0, PSEG + 0.1), mat(0x8a8883), NS * NPS * 2);
+  const ptop = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tileTex }), NS * NPS * 2);
+  const ptact = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.6, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tactTex }), NS * NPS * 2);
+  const proof = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, PSEG + 0.1), roofM, NS * NRF * 2);
   let pbi = 0, pri = 0;
   const distM = [10, 20, 30, 40, 50].map((d) => {
     const dc = document.createElement('canvas'); dc.width = 192; dc.height = 124; const x = dc.getContext('2d');
@@ -502,6 +523,14 @@ function buildWorld() {
     }
     for (let j = 0; j < NRF; j++) { const s = tp - 143 + PSEG / 2 + PSEG * j, w = platW(i, s); inst(proof, pri++, sd * (PLAT_EDGE + w / 2), 4.0, s, 0, (w + 0.4) / 4.8); }
     for (let s = tp - PL + 8; s <= tp - 14; s += 6) { const w = platW(i, s); inst(ribs, ri++, sd * (PLAT_EDGE + w / 2), 3.9, s, 0, (w + 0.4) / 4.8); }
+    if (!isl) {                                                       // 相対式ホームの駅: 対向線路の外側にも側ホーム
+      for (let j = 0; j < NPS; j++) {
+        const s = tp - PLAT_BACK + PSEG / 2 + PSEG * j, lo = oppLx(s), c = lo + PLAT_EDGE + 2.2;
+        inst(pbase, pbi, c, 0.5, s); inst(ptop, pbi, c, 1.004, s); inst(ptact, pbi, lo + PLAT_EDGE + 0.4, 1.008, s); pbi++;
+      }
+      for (let j = 0; j < NRF; j++) { const s = tp - 143 + PSEG / 2 + PSEG * j; inst(proof, pri++, oppLx(s) + PLAT_EDGE + 2.2, 4.0, s); }
+      for (let s = tp - PL + 12; s <= tp - 8; s += 12) inst(posts, pi++, oppLx(s) + 5.3, 2.5, s);
+    }
     for (let k = 0; k < 8; k++) { const s = tp - 10 - 20 * k; if (s < tp - PL + 6) break; inst(marks, mki++, sd * 2.9, 1.01, s); }
     [10, 20, 30, 40, 50].forEach((d, di) => {
       put(new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]), sd * 1.95, 1.62, tp - d + 0.04);
@@ -520,7 +549,10 @@ function buildWorld() {
       g.fillStyle = '#f18c43'; g.fillRect(14, 36, 86, 40);
       g.fillStyle = '#fff'; g.font = '700 30px ' + NUMF; g.fillText(st.code, 57, 67);
       const t = new THREE.CanvasTexture(sc); t.anisotropy = maxAniso;
-      put(new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.56), new THREE.MeshBasicMaterial({ map: t })), sd * 1.95, 2.5, tp - off, faceY);
+      const sgM = new THREE.MeshBasicMaterial({ map: t }), sgG = new THREE.PlaneGeometry(1.8, 0.56);
+      put(new THREE.Mesh(sgG, sgM), sd * 1.95, 2.5, tp - off, faceY);
+      if (isl) put(new THREE.Mesh(sgG, sgM), PLAT_EDGE + platW(i, tp - off) - 0.25, 2.5, tp - off, Math.PI / 2);   // 島式の反対側
+      else put(new THREE.Mesh(sgG, sgM), oppLx(tp - off) + 1.95, 2.5, tp - off, -Math.PI / 2);                    // 対向ホーム
       put(box(0.08, 1.5, 0.08, postM), sd * 1.98, 1.75, tp - off);
     }
     // 停止位置目標(進入側から見える面と、運転席の横窓から見える面)
@@ -532,6 +564,99 @@ function buildWorld() {
   posts.count = pi; scene.add(posts);
   ribs.count = ri; scene.add(ribs); marks.count = mki; scene.add(marks); dposts.count = dpi; scene.add(dposts);
   [pbase, ptop, ptact, proof].forEach((m) => { m.count = (m === proof ? pri : pbi); scene.add(m); });
+}
+
+/* ============ 対向列車(溝の口→大井町、6020系7両・全駅停車) ============ */
+const CAR_L = 20, CAR_N = 7, HEADWAY = 300;
+let trains = [], oppProf = null, oppCycle = 1, wtime = 0, passBoost = 0;
+function buildProfile() {
+  const stops = []; for (let i = STATIONS.length - 1; i >= 0; i--) stops.push(stationPos(i) - 145);   // 先頭位置(編成が150mのホームに収まる)
+  const V = 90 / 3.6, A = 0.85, B = 0.95, DW = 22, DT = 0.5;
+  const out = [];
+  const hold = (s, dur) => { for (let u = 0; u < dur; u += DT) out.push(s); };
+  hold(stops[0], 25);
+  for (let k = 0; k < stops.length - 1; k++) {
+    const d = stops[k] - stops[k + 1], vm = Math.min(V, Math.sqrt(2 * d * A * B / (A + B)));
+    const ta = vm / A, tb = vm / B, da = vm * vm / (2 * A), db = vm * vm / (2 * B), tc = Math.max(0, (d - da - db) / vm), T = ta + tc + tb;
+    for (let u = 0; u < T; u += DT) {
+      let x;
+      if (u < ta) x = 0.5 * A * u * u; else if (u < ta + tc) x = da + vm * (u - ta); else { const w = T - u; x = d - 0.5 * B * w * w; }
+      out.push(stops[k] - x);
+    }
+    hold(stops[k + 1], k === stops.length - 2 ? 30 : DW);
+  }
+  return { arr: out, DT: DT, T: out.length * DT };
+}
+function posAt(age) {
+  const f = Math.max(0, Math.min(oppProf.arr.length - 1.001, age / oppProf.DT)), i = Math.floor(f), u = f - i;
+  return oppProf.arr[i] + (oppProf.arr[i + 1] - oppProf.arr[i]) * u;
+}
+function trainTextures() {
+  const side = document.createElement('canvas'); side.width = 1024; side.height = 144;
+  const g = side.getContext('2d'), mx = 1024 / 20;
+  g.fillStyle = '#cfd4d8'; g.fillRect(0, 0, 1024, 144);
+  g.fillStyle = '#1f2a35';
+  g.fillRect(0.3 * mx, 22, 1.2 * mx, 46); g.fillRect(18.5 * mx, 22, 1.2 * mx, 46);
+  for (let d = 0; d < 3; d++) { g.fillRect((2.5 + 5 * d + 0.8) * mx, 22, 1.5 * mx, 46); g.fillRect((2.5 + 5 * d + 2.7) * mx, 22, 1.5 * mx, 46); }
+  for (let d = 0; d < 4; d++) {
+    const cx = (2.5 + d * 5) * mx;
+    g.fillStyle = '#aab1b7'; g.fillRect(cx - 0.7 * mx, 14, 1.4 * mx, 118);
+    g.fillStyle = '#1f2a35'; g.fillRect(cx - 0.55 * mx, 22, 1.1 * mx, 46);
+    g.fillStyle = '#8f979d'; g.fillRect(cx - 0.02 * mx, 14, 0.04 * mx, 118);
+  }
+  g.fillStyle = '#f08a2b'; g.fillRect(0, 100, 1024, 9);      // オレンジの帯
+  g.fillStyle = '#8e969c'; g.fillRect(0, 132, 1024, 12);
+  const cab = document.createElement('canvas'); cab.width = 280; cab.height = 260;
+  const c = cab.getContext('2d');
+  c.fillStyle = '#cfd4d8'; c.fillRect(0, 0, 280, 260);
+  c.fillStyle = '#12151a'; c.fillRect(22, 36, 236, 150);
+  c.fillStyle = '#26323e'; c.fillRect(32, 46, 104, 124); c.fillRect(144, 46, 104, 124);
+  c.fillStyle = '#12151a'; c.fillRect(136, 36, 8, 150);
+  c.fillStyle = '#000'; c.fillRect(80, 8, 120, 24);
+  c.fillStyle = '#4cc38a'; c.font = '700 18px ' + JPF; c.textAlign = 'center'; c.fillText('各停', 112, 27);
+  c.fillStyle = '#fff'; c.fillText('大井町', 164, 27);
+  c.fillStyle = '#f08a2b'; c.fillRect(0, 196, 280, 14);
+  c.fillStyle = '#fff6d8'; for (const x of [44, 236]) { c.beginPath(); c.arc(x, 232, 13, 0, 7); c.fill(); }
+  c.fillStyle = '#c0392b'; for (const x of [76, 204]) { c.beginPath(); c.arc(x, 232, 7, 0, 7); c.fill(); }
+  const gang = document.createElement('canvas'); gang.width = 64; gang.height = 64;
+  const q = gang.getContext('2d'); q.fillStyle = '#6c7379'; q.fillRect(0, 0, 64, 64); q.fillStyle = '#3a3f44'; q.fillRect(8, 6, 48, 52);
+  const tex = (cv) => { const x = new THREE.CanvasTexture(cv); x.anisotropy = 4; return x; };
+  return { side: tex(side), cab: tex(cab), gang: tex(gang) };
+}
+function buildTrains() {
+  oppProf = buildProfile();
+  const N = Math.ceil(oppProf.T / HEADWAY) + 1; oppCycle = N * HEADWAY;
+  const T = trainTextures();
+  const M = (map) => new THREE.MeshLambertMaterial({ map: map }), plain = (c) => new THREE.MeshLambertMaterial({ color: c });
+  const sideM = M(T.side), cabM = M(T.cab), gangM = M(T.gang), topM = plain(0xb9bec3), botM = plain(0x2b2f33);
+  const bodyG = new THREE.BoxGeometry(2.8, 2.6, CAR_L - 0.4), underG = new THREE.BoxGeometry(2.4, 0.55, CAR_L - 1.4), underM = plain(0x2b2f33);
+  for (let j = 0; j < N; j++) {
+    const grp = new THREE.Group(), cars = [];
+    for (let c = 0; c < CAR_N; c++) {
+      const car = new THREE.Group();
+      const body = new THREE.Mesh(bodyG, [sideM, sideM, topM, botM, c === 0 ? cabM : gangM, c === CAR_N - 1 ? cabM : gangM]);
+      body.position.y = 2.25; car.add(body);
+      const under = new THREE.Mesh(underG, underM); under.position.y = 0.72; car.add(under);
+      grp.add(car); cars.push(car);
+    }
+    grp.visible = false; scene.add(grp); trains.push({ g: grp, cars: cars });
+  }
+}
+function updateTrains(dt) {
+  wtime += dt; passBoost = 0;
+  for (let j = 0; j < trains.length; j++) {
+    const tr = trains[j], age = (wtime + HEADWAY * j) % oppCycle;
+    if (age >= oppProf.T) { tr.g.visible = false; continue; }
+    const sh = posAt(age), st = sh + CAR_N * CAR_L;
+    if (sh > sim.s + 1800 || st < sim.s - 1800) { tr.g.visible = false; continue; }   // 遠い列車は描かない
+    tr.g.visible = true;
+    for (let c = 0; c < CAR_N; c++) {
+      const sc = sh + CAR_L * (c + 0.5), l = loc(sc, oppLx(sc));
+      tr.cars[c].position.set(l[0], 0, l[1]); tr.cars[c].rotation.y = -l[2] + oppYaw(sc);
+    }
+    const dist = sim.s < sh ? sh - sim.s : (sim.s > st ? sim.s - st : 0);        // すれ違い音用
+    if (dist < 70) { const vt = Math.abs(posAt(age + 1) - posAt(age)); passBoost = Math.max(passBoost, (1 - dist / 70) * Math.min(1, (vt + Math.abs(sim.v)) / 28)); }
+  }
 }
 
 /* ============ cab ============ */
@@ -905,7 +1030,7 @@ function playEv(ev) {
 function updateAudio() {
   if (!snd.ctx || !snd.roll) return;
   const t = snd.ctx.currentTime, vk = Math.abs(sim.v * 3.6);
-  snd.roll.g.gain.setTargetAtTime(Math.min(0.32, vk / 95 * 0.32), t, 0.1);
+  snd.roll.g.gain.setTargetAtTime(Math.min(0.55, vk / 95 * 0.32 + passBoost * 0.3), t, 0.08);   // すれ違い時は轟音
   snd.roll.fl.frequency.setTargetAtTime(200 + vk * 9, t, 0.1);
   snd.og.gain.setTargetAtTime(sim.tr > 0.05 ? Math.min(0.09, 0.03 + sim.tr * 0.02) : 0, t, 0.08);
   snd.osc.frequency.setTargetAtTime(70 + vk * 7, t, 0.12);
@@ -1006,6 +1131,7 @@ function frame() {
     if (renderer.xr.isPresenting) { pollPads(dt); dragLevers(); }
     if (sim.msg !== lastMsg) { lastMsg = sim.msg; showToast(sim.msg, sim.msgK); }
     if (sim.phase === 'finished' && !lastFinished) { lastFinished = true; }
+    updateTrains(dt);
   }
   toastT -= dt; if (toastT < 0) $('#toast').style.opacity = 0;
   const pp = P(sim.s);                   // 線路の曲線に沿って運転台を動かす
@@ -1027,7 +1153,7 @@ function frame() {
 
 /* ============ 起動 ============ */
 function boot() {
-  buildWorld(); buildCab(); buildPanels(); setupControllers();
+  buildWorld(); buildTrains(); updateTrains(0); buildCab(); buildPanels(); setupControllers();
   drawATC(); drawSpeed(); drawInfo();
   renderer.setAnimationLoop(frame);
 }
