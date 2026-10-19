@@ -413,9 +413,13 @@ const DTS = { stns: [{ n: '二子新地', r: 'Futako-shinchi', code: 'DT08', tp:
   TRACKS.push({ name: 'mg-down', a: to - 450, b: to + 800, lx: (s) => -(PLAT_EDGE * 2 + WO) - FAR * (1 - gO(s)) });
   TRACKS.push({ name: 'mg-up', a: to - 450, b: to + 800, lx: (s) => oppLx(s) + (PLAT_EDGE * 2 + WO) + FAR * (1 - gO(s)) });
   const dtIn = (s) => sstep((s - DTS.a) / 220);
-  const dtSp = (s) => { let e = 0; for (const d of DTS.stns) e += sstep((s - (d.tp - DTS.back - 70)) / 70) * sstep(((d.tp + PLAT_FWD + 70) - s) / 70); return Math.min(1, e); };
-  DTS.down = (s) => { const g = dtIn(s); return oppLx(s) + 3.8 * g + 20 * (1 - g); };
-  DTS.up = (s) => { const g = dtIn(s); return oppLx(s) + 7.6 * g + 20 * (1 - g) + (PLAT_EDGE * 2 + DTS.W - 3.8) * dtSp(s) * g; };
+  const imz = stnIdx('溝の口'), tmz = stationPos(imz), WM = 8.0;
+  EXT[imz] = { W: WM };                                               // 溝の口: 島式ホーム2本(大井町線と田園都市線が対面)
+  const dtSp = (s) => sstep((s - (tmz - PLAT_BACK - 70)) / 70) * sstep(((tmz + PLAT_FWD + 70) - s) / 70);
+  const ex = (PLAT_EDGE * 2 + WM - 3.8);
+  DTS.down = (s) => { const g = dtIn(s); return -(3.8 * g + 20 * (1 - g)) - ex * dtSp(s) * g; };
+  DTS.up = (s) => { const g = dtIn(s); return oppLx(s) + 3.8 * g + 20 * (1 - g) + ex * dtSp(s) * g; };
+  DTS.out = DTS.stns.slice(0, 2); DTS.OW = 5.0;                       // 二子新地・高津: 外側に片側ホーム
   TRACKS.push({ name: 'dt-down', a: DTS.a, b: DTS.b, lx: DTS.down });
   TRACKS.push({ name: 'dt-up', a: DTS.a, b: DTS.b, lx: DTS.up });
   TRACKS.tracks = { pass: [th, WH], mg: [to, WO] };
@@ -423,6 +427,7 @@ const DTS = { stns: [{ n: '二子新地', r: 'Futako-shinchi', code: 'DT08', tp:
 function extents(s) {                               // その位置で架線柱・建物が避けるべき横方向の範囲
   let mn = 0, mx = oppLx(s);
   for (const t of TRACKS) if (s >= t.a && s <= t.b) { const x = t.lx(s); if (x < mn && x > mn - 14) mn = x; else if (x > mx && x < mx + 14) mx = x; }
+  for (const d of DTS.out) if (s >= d.tp - DTS.back - 5 && s <= d.tp + PLAT_FWD + 5) { mn -= PLAT_EDGE + DTS.OW; mx += PLAT_EDGE + DTS.OW; break; }
   return [mn, mx];
 }
 function oppYaw(s) { return -Math.atan((oppLx(s + 1) - oppLx(s - 1)) / 2); }
@@ -619,21 +624,35 @@ function buildWorld() {
     const tx2 = new THREE.CanvasTexture(sc); tx2.anisotropy = maxAniso;
     return new THREE.MeshBasicMaterial({ map: tx2 });
   };
-  DTS.stns.forEach((d) => {
-    const tp = d.tp, NSD = DTS.back / PSEG + 1;
+  DTS.out.forEach((d) => {
+    const tp = d.tp, NSD = DTS.back / PSEG + 1, W = DTS.OW;
     for (let j = 0; j < NSD; j++) {
-      const s = tp - DTS.back + PSEG / 2 + PSEG * j, dn = DTS.down(s), c = dn + PLAT_EDGE + DTS.W / 2;
-      inst(pbase, pbi, c, 0.5, s, 0, DTS.W / 4.4); inst(ptop, pbi, c, 1.004, s, 0, DTS.W / 4.4); pbi++;
-      inst(ptact, tci++, dn + PLAT_EDGE + 0.4, 1.008, s); inst(ptact, tci++, dn + PLAT_EDGE + DTS.W - 0.4, 1.008, s);
-      if (j < NSD - 4 && j > 2) inst(proof, pri++, c, 4.0, s, 0, (DTS.W + 0.4) / 4.8);
+      const s = tp - DTS.back + PSEG / 2 + PSEG * j;
+      for (const k of [-1, 1]) {                                      // 下り(左)・上り(右)の片側ホーム
+        const e = k < 0 ? DTS.down(s) : DTS.up(s), c = e + k * (PLAT_EDGE + W / 2);
+        inst(pbase, pbi, c, 0.5, s, 0, W / 4.4); inst(ptop, pbi, c, 1.004, s, 0, W / 4.4); pbi++;
+        inst(ptact, tci++, e + k * (PLAT_EDGE + 0.4), 1.008, s);
+        if (j > 2 && j < NSD - 4) inst(proof, pri++, c, 4.0, s, 0, (W + 0.4) / 4.8);
+      }
     }
-    for (let s = tp - DTS.back + 12; s <= tp - 8; s += 12) inst(posts, pi++, DTS.down(s) + PLAT_EDGE + DTS.W / 2, 2.5, s);
+    for (let s = tp - DTS.back + 12; s <= tp - 8; s += 12) for (const k of [-1, 1]) inst(posts, pi++, (k < 0 ? DTS.down(s) : DTS.up(s)) + k * (PLAT_EDGE + 0.3), 2.5, s);
     const dm2 = dtSign(d), dg2 = new THREE.PlaneGeometry(1.8, 0.56);
     for (const off of [150, 60]) {
-      put(new THREE.Mesh(dg2, dm2), DTS.down(tp - off) + PLAT_EDGE + 0.25, 2.5, tp - off, -Math.PI / 2);
-      put(new THREE.Mesh(dg2, dm2), DTS.down(tp - off) + PLAT_EDGE + DTS.W - 0.25, 2.5, tp - off, Math.PI / 2);
+      put(new THREE.Mesh(dg2, dm2), DTS.down(tp - off) - PLAT_EDGE - 0.25, 2.5, tp - off, Math.PI / 2);
+      put(new THREE.Mesh(dg2, dm2), DTS.up(tp - off) + PLAT_EDGE + 0.25, 2.5, tp - off, -Math.PI / 2);
     }
   });
+  {                                                                   // 溝の口: 田園都市線列車(10両)のためホームを後方へ延長
+    const tp = DTS.stns[2].tp, dm2 = dtSign(DTS.stns[2]);
+    for (let s = tp - 202.5; s < tp - PLAT_BACK; s += PSEG) for (const k of [-1, 1]) {
+      const c = k < 0 ? -(PLAT_EDGE + 4) : oppLx(s) + PLAT_EDGE + 4;
+      inst(pbase, pbi, c, 0.5, s, 0, 8 / 4.4); inst(ptop, pbi, c, 1.004, s, 0, 8 / 4.4); pbi++;
+      inst(ptact, tci++, k < 0 ? -(PLAT_EDGE + 7.6) : oppLx(s) + PLAT_EDGE + 7.6, 1.008, s);
+    }
+    const dg2 = new THREE.PlaneGeometry(1.8, 0.56);
+    put(new THREE.Mesh(dg2, dm2), DTS.down(tp - 120) + PLAT_EDGE + 0.25, 2.5, tp - 120, -Math.PI / 2);
+    put(new THREE.Mesh(dg2, dm2), DTS.up(tp - 120) - PLAT_EDGE - 0.25, 2.5, tp - 120, Math.PI / 2);
+  }
   // 旗の台の追い抜き設備: 分岐器(ポイント)と出発信号機(設備のみ。列車は走らない)
   const sigPost = mat(0x8e949a), sigHead = mat(0x1b1f24);
   const signal = (lx, s, lamp) => {
