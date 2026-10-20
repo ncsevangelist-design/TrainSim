@@ -410,7 +410,7 @@ function oppLx(s) {                                 // 対向線路の中心(自
 const TRACKS = [];                                  // {a, b, lx(s)}: 自線路中心からの横位置
 const EXT = {};
 const KAM = {};                                      // 上野毛の追い越し線(ホームなし)
-const crossK = (s) => sstep((340 - s) / 140);       // 大井町: 上り列車が2番線→1番線へ転線する度合い(0→1)                                     // 駅番号 → 外側にも線路がある島式ホーム {W}
+const crossK = (s) => sstep((90 - s) / 70);       // 大井町: 上り列車が2番線→1番線へ転線する度合い(0→1)                                     // 駅番号 → 外側にも線路がある島式ホーム {W}
 const FAR = 45;
 const stnIdx = (n) => STATIONS.findIndex((x) => x.n === n);
 const DTS = { stns: [{ n: '二子玉川', r: 'Futako-tamagawa', code: 'DT07', tp: 10400 }, { n: '二子新地', r: 'Futako-shinchi', code: 'DT08', tp: 11660 }, { n: '高津', r: 'Takatsu', code: 'DT09', tp: 12020 }, { n: '溝の口', r: 'Mizonokuchi', code: 'DT10', tp: 12400 }],
@@ -440,8 +440,8 @@ const DTS = { stns: [{ n: '二子玉川', r: 'Futako-tamagawa', code: 'DT07', tp
   const gK = (s) => sstep((s - (tk - PLAT_BACK - 110)) / 110) * sstep(((tk + PLAT_FWD + 110) - s) / 110);
   KAM.L = (s) => -4.4 * gK(s); KAM.R = (s) => oppLx(s) + 4.4 * gK(s); KAM.t = tk;
   TRACKS.push({ name: 'kam-R', a: tk - PLAT_BACK - 130, b: tk + PLAT_FWD + 130, lx: KAM.R });
-  TRACKS.push({ name: 'xover', a: 190, b: 340, lx: (s) => oppLx(s) * (1 - crossK(s)) });   // 大井町のダブルクロス(2本の渡り線がX字に交差)
-  TRACKS.push({ name: 'xover2', a: 190, b: 340, lx: (s) => oppLx(s) * crossK(s) });
+  TRACKS.push({ name: 'xover', a: 20, b: 90, lx: (s) => oppLx(s) * (1 - crossK(s)) });   // 大井町のダブルクロス(2本の渡り線がX字に交差)
+  TRACKS.push({ name: 'xover2', a: 20, b: 90, lx: (s) => oppLx(s) * crossK(s) });
   TRACKS.tracks = { pass: [th, WH], mg: [to, WO] };
 })();
 function extents(s) {                               // その位置で架線柱・建物が避けるべき横方向の範囲
@@ -733,8 +733,8 @@ function buildWorld() {
   (function () {
     const th = TRACKS.tracks.pass[0], tpL = TRACKS.find((q) => q.name === 'pass-L'), tpR = TRACKS.find((q) => q.name === 'pass-R');
     pointsAt(oppLx(KAM.t), KAM.t - PLAT_BACK - 125, 1); pointsAt(oppLx(KAM.t), KAM.t + PLAT_FWD + 125, 1);
-    pointsAt(0, 200, 1); pointsAt(oppLx(340), 340, -1); pointsAt(oppLx(200), 200, -1); pointsAt(0, 340, 1);
-    put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(270) / 2, 0.08, 270, 0.55); put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(270) / 2, 0.08, 270, -0.55);   // 交差部(ダイヤモンドクロッシング)
+    pointsAt(0, 20, 1); pointsAt(oppLx(90), 90, -1); pointsAt(oppLx(20), 20, -1); pointsAt(0, 90, 1);
+    put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(55) / 2, 0.08, 55, 0.55); put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(55) / 2, 0.08, 55, -0.55);   // 交差部(ダイヤモンドクロッシング)
     pointsAt(0, th - 285, -1); pointsAt(0, th + 150, -1);
     pointsAt(oppLx(th - 285), th - 285, 1); pointsAt(oppLx(th + 150), th + 150, 1);
     signal(-2.6, th + 16, 0x3ad17a); signal(tpL.lx(th + 16) - 2.6, th + 16, 0xe04848);
@@ -872,7 +872,7 @@ function buildServices() {
       const grp = new THREE.Group(), cars = [];
       for (let c = 0; c < sv.n; c++) {
         const car = new THREE.Group();
-        const body = new THREE.Mesh(bodyG, [sideM, sideM, topM, botM, c === 0 ? cabM : gangM, c === sv.n - 1 ? cabM : gangM]);
+        const body = new THREE.Mesh(bodyG, sv.m > 0 ? [sideM, sideM, topM, botM, c === sv.n - 1 ? cabM : gangM, c === 0 ? cabM : gangM] : [sideM, sideM, topM, botM, c === 0 ? cabM : gangM, c === sv.n - 1 ? cabM : gangM]);
         body.position.y = 2.25; car.add(body);
         const under = new THREE.Mesh(underG, underM); under.position.y = 0.72; car.add(under);
         grp.add(car); cars.push(car);
@@ -919,7 +919,7 @@ function buildTrains() {
       const grp = new THREE.Group(), cars = [];
       for (let c = 0; c < CAR_N; c++) {
         const car = new THREE.Group();
-        const body = new THREE.Mesh(bodyG, [sideM, sideM, topM, botM, c === 0 ? cabM : gangM, c === CAR_N - 1 ? cabM : gangM]);
+        const body = new THREE.Mesh(bodyG, cfg[0] > 0 ? [sideM, sideM, topM, botM, c === CAR_N - 1 ? cabM : gangM, c === 0 ? cabM : gangM] : [sideM, sideM, topM, botM, c === 0 ? cabM : gangM, c === CAR_N - 1 ? cabM : gangM]);
         body.position.y = 2.25; car.add(body);
         const under = new THREE.Mesh(underG, underM); under.position.y = 0.72; car.add(under);
         grp.add(car); cars.push(car);
