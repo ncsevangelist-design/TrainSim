@@ -81,6 +81,9 @@
   <div class="grp"><span>停止許容</span>
     <button data-act="o3" id="o3">±3m</button><button data-act="o15" id="o15">±1.5m</button><button data-act="o05" id="o05">±0.5m</button>
   </div>
+  <div class="grp"><span>天候</span>
+    <button data-act="wd" id="wd">昼</button><button data-act="wn" id="wn">夜</button><button data-act="wc" id="wc">晴</button><button data-act="wr" id="wr">雨</button>
+  </div>
   <div class="grp"><span>方向</span>
     <button data-act="df" id="df">下り</button><button data-act="dr" id="dr">上り</button>
   </div>
@@ -348,13 +351,58 @@ camera.position.set(0, 1.2, 0);
 const cab = new THREE.Group();              // 運転台一式(高さ調整はここを動かす)
 dolly.add(cab);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f86, 0.95));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f86, 0.95);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1d6, 0.9);
 sun.position.set(-60, 120, 40);
 scene.add(sun);
 const cabLight = new THREE.PointLight(0xffffff, 0.5, 6);
 cabLight.position.set(0, 2.0, -0.6);
 cab.add(cabLight);
+/* ============ 天候(夜・雨) ============ */
+const WX = { bal: [] };                              // 天候で色を変える素材の参照
+const TRMATS = [];                                   // 電車の素材(夜は窓明かりで自発光)
+let nightOn = false, rainOn = false;
+try { nightOn = localStorage.getItem('oimachi.night') === '1'; rainOn = localStorage.getItem('oimachi.rain') === '1'; } catch (e) {}
+const headLight = new THREE.SpotLight(0xfff5dc, 0, 280, 0.42, 0.55, 1.2);   // 夜の前照灯
+headLight.position.set(0, 0.7, -1.9); dolly.add(headLight); headLight.target.position.set(0, 0.2, -80); dolly.add(headLight.target);
+const RAIN_N = 1500, rainX = new Float32Array(RAIN_N), rainY = new Float32Array(RAIN_N), rainZ = new Float32Array(RAIN_N);
+const rainPos = new Float32Array(RAIN_N * 6);
+const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainLines = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xd5dde5, transparent: true, opacity: 0.5 }));
+rainLines.frustumCulled = false; rainLines.visible = false; dolly.add(rainLines);
+for (let i = 0; i < RAIN_N; i++) { rainX[i] = (Math.random() - 0.5) * 30; rainY[i] = -2 + Math.random() * 16; rainZ[i] = -1.8 - Math.random() * 70; }
+function updateRain(dt) {
+  if (!rainOn) return;
+  const vt = Math.abs(sim.v), fall = 15 * dt;
+  for (let i = 0; i < RAIN_N; i++) {
+    rainY[i] -= fall; rainZ[i] += vt * dt;
+    if (rainY[i] < -2 || rainZ[i] > -1.7) { rainY[i] = 12 + Math.random() * 3; rainX[i] = (Math.random() - 0.5) * 30; rainZ[i] = -1.8 - Math.random() * 70; }
+    const k = i * 6;
+    rainPos[k] = rainX[i]; rainPos[k + 1] = rainY[i]; rainPos[k + 2] = rainZ[i];
+    rainPos[k + 3] = rainX[i]; rainPos[k + 4] = rainY[i] + 0.55; rainPos[k + 5] = rainZ[i] - vt * 0.035;
+  }
+  rainGeo.attributes.position.needsUpdate = true;
+}
+function applyWeather() {
+  const n = nightOn, r = rainOn;
+  const sky = n ? (r ? 0x0e1218 : 0x070b16) : (r ? 0x8c969f : SKY);
+  scene.background.setHex(sky); scene.fog.color.setHex(sky);
+  scene.fog.near = r ? 25 : (n ? 70 : 160); scene.fog.far = r ? (n ? 380 : 520) : (n ? 850 : 1500);
+  hemi.intensity = n ? 0.2 : (r ? 0.72 : 0.95);
+  sun.intensity = n ? 0.08 : (r ? 0.3 : 0.9); sun.color.setHex(n ? 0x8aa0e0 : 0xfff1d6);
+  cabLight.intensity = n ? 0.6 : 0.5;
+  headLight.intensity = n ? 3.2 : 0;
+  const em = (m, c) => { if (m) m.emissive.setHex(n ? c : 0x000000); };
+  em(WX.bld, 0x201a0e); em(WX.ptop, 0x3a3935); em(WX.ptact, 0x3a3724); em(WX.roof, 0x3a3935);
+  TRMATS.forEach((m) => m.emissive.setHex(n ? 0x8d8d88 : 0x000000));
+  WX.bal.forEach((m) => m.color.setHex(r ? 0x8a8a8a : 0xffffff));
+  rainLines.visible = r;
+  ['wn', 'wd', 'wr', 'wc'].forEach((id) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', ({ wn: n, wd: !n, wr: r, wc: !r })[id]); });
+  try { localStorage.setItem('oimachi.night', n ? '1' : '0'); localStorage.setItem('oimachi.rain', r ? '1' : '0'); } catch (e) {}
+}
+function setNight(v) { nightOn = v; applyWeather(); }
+function setRain(v) { rainOn = v; applyWeather(); }
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -499,20 +547,25 @@ function buildWorld() {
   }
   scene.add(ballast); scene.add(rails); scene.add(wires);
   const extraTracks = [{ a: S_START, b: S_END, lx: oppLx }].concat(TRACKS);
-  let nX = 0; extraTracks.forEach((q) => { nX += Math.ceil((q.b - q.a) / SEG); });
-  const ballastX = new THREE.InstancedMesh(ballast.geometry, ballast.material, nX);
-  const railsX = new THREE.InstancedMesh(rails.geometry, rails.material, nX * 2);
-  const wiresX = new THREE.InstancedMesh(wires.geometry, wires.material, nX);
+  const SEGX = 4;                                       // 横にずれて曲がる線路は区間を細かくして、継ぎ目の段差を出さない
+  let nX = 0; extraTracks.forEach((q) => { nX += Math.ceil((q.b - q.a) / SEGX); });
+  const btX = bt.clone(); btX.needsUpdate = true; btX.repeat.set(1, (SEGX + 0.05) / 0.65); btX.wrapS = btX.wrapT = THREE.RepeatWrapping;
+  const ballastX = new THREE.InstancedMesh(new THREE.PlaneGeometry(3.4, SEGX + 0.05).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: btX }), nX);
+  const railsX = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 0.16, SEGX + 0.1), rails.material, nX * 2);
+  const wiresX = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.03, SEGX + 0.1), wires.material, nX);
   let xi = 0;
   extraTracks.forEach((q) => {
-    const n = Math.ceil((q.b - q.a) / SEG);
+    const n = Math.ceil((q.b - q.a) / SEGX);
     for (let j = 0; j < n; j++) {
-      const s = q.a + SEG / 2 + SEG * j, lo = q.lx(s), yw = laneYaw(q.lx, s);
-      const p1 = loc(s - SEG / 2, q.lx(s - SEG / 2)), p2 = loc(s + SEG / 2, q.lx(s + SEG / 2)), zs = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SEG;   // 曲線の外側/内側で区間の長さが変わるぶん伸縮してレールをつなぐ
+      const s = q.a + SEGX / 2 + SEGX * j, lo = q.lx(s), yw = laneYaw(q.lx, s);
+      if (q.name && /^(kam|pass|xover)/.test(q.name) && Math.min(Math.abs(lo), Math.abs(lo - oppLx(s))) < 0.9) continue;   // 本線と重なる区間は描かない(分岐の手前でレールが二重にならないように)
+      const p1 = loc(s - SEGX / 2, q.lx(s - SEGX / 2)), p2 = loc(s + SEGX / 2, q.lx(s + SEGX / 2)), zs = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SEGX;   // 曲線の外側/内側で区間の長さが変わるぶん伸縮してレールをつなぐ
       inst(ballastX, xi, lo, 0, s, yw, 1, 1, zs); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
     }
   });
+  ballastX.count = xi; railsX.count = xi * 2; wiresX.count = xi;
   scene.add(ballastX); scene.add(railsX); scene.add(wiresX);
+  WX.bal = [ballast.material, ballastX.material];
 
   // 地面(多摩川の部分は欠ける)
   const gm = mat(0x77806f), cm = mat(0x8b8f91);
@@ -580,7 +633,7 @@ function buildWorld() {
     IGN = true; inst(bld, bi, lat, h / 2 - 0.25, s, 0, w, h, d); IGN = false;
     col.setHex(pal[(rnd() * pal.length) | 0]); bld.setColorAt(bi, col); bi++;
   }
-  bld.count = bi; scene.add(bld);
+  bld.count = bi; scene.add(bld); WX.bld = bld.material;
 
   // 駅
   const roofM = mat(0xe9e6df), postM = mat(0x8e949a);
@@ -604,6 +657,7 @@ function buildWorld() {
   const ptact = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.6, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tactTex }), NS * NPS * 2 + 700);
   const proof = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, PSEG + 0.1), roofM, NS * NRF * 2 + 160);
   let pbi = 0, pri = 0, tci = 0;
+  WX.ptop = ptop.material; WX.ptact = ptact.material; WX.roof = roofM;
   const distM = [10, 20, 30, 40, 50].map((d) => {
     const dc = document.createElement('canvas'); dc.width = 192; dc.height = 124; const x = dc.getContext('2d');
     x.fillStyle = '#f2c14e'; x.fillRect(0, 0, 192, 124); x.fillStyle = '#10305a'; x.fillRect(8, 8, 176, 108);
@@ -876,6 +930,7 @@ function buildServices() {
     const key = sv.band + sv.kind + sv.dest, T = cache[key] || (cache[key] = trainTextures(sv.band, sv.kind, sv.dest));
     const M = (map) => new THREE.MeshLambertMaterial({ map: map }), plain = (c) => new THREE.MeshLambertMaterial({ color: c });
     const sideM = M(T.side), cabM = M(T.cab), gangM = M(T.gang), topM = plain(0xb9bec3), botM = plain(0x2b2f33), underM = plain(0x2b2f33);
+    [sideM, cabM].forEach((m) => { m.emissiveMap = m.map; m.emissive.setHex(0); TRMATS.push(m); });
     const bodyG = new THREE.BoxGeometry(2.8, 2.6, CAR_L - 0.4), underG = new THREE.BoxGeometry(2.4, 0.55, CAR_L - 1.4);
     for (let j = 0; j < sv.N; j++) {
       const grp = new THREE.Group(), cars = [];
@@ -924,6 +979,7 @@ function buildTrains() {
     F.N = Math.ceil(F.prof.T / HEADWAY) + 1; F.cycle = F.N * HEADWAY;
     const T = trainTextures('#f08a2b', '各停', cfg[1]);
     const sideM = M(T.side), cabM = M(T.cab), gangM = M(T.gang), topM = plain(0xb9bec3), botM = plain(0x2b2f33);
+    [sideM, cabM].forEach((m) => { m.emissiveMap = m.map; m.emissive.setHex(0); TRMATS.push(m); });
     for (let j = 0; j < F.N; j++) {
       const grp = new THREE.Group(), cars = [];
       for (let c = 0; c < CAR_N; c++) {
@@ -1066,6 +1122,9 @@ function buildCab() {
   makeBtn('各停', 0.1, 0.06, 0.6, -0.9, () => setType(sim, 'local'), () => sim.type === 'local');
   makeBtn('急行', 0.1, 0.06, 0.72, -0.9, () => setType(sim, 'express'), () => sim.type === 'express');
   makeBtn('最初から', 0.14, 0.06, 1.02, -0.9, () => restart(), () => false);
+  makeLabel('天候', 0.2, 0.05, -0.24, -1.0);
+  makeBtn('夜', 0.1, 0.06, -0.3, -0.9, () => setNight(!nightOn), () => nightOn);
+  makeBtn('雨', 0.1, 0.06, -0.18, -0.9, () => setRain(!rainOn), () => rainOn);
   makeLabel('方向', 0.2, 0.05, -0.49, -1.0);
   makeBtn('下り', 0.1, 0.06, -0.55, -0.9, () => setDir(1), () => sim.dir > 0);
   makeBtn('上り', 0.1, 0.06, -0.43, -0.9, () => setDir(-1), () => sim.dir < 0);
@@ -1280,6 +1339,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 't') setType(sim, sim.type === 'local' ? 'express' : 'local');
   else if (k === 'r') restart();
   else if (k === 'd') setDir(-sim.dir);
+  else if (k === 'l') setNight(!nightOn);
+  else if (k === 'h') setRain(!rainOn);
 });
 
 document.querySelectorAll('#bar [data-act]').forEach((b) => b.addEventListener('click', () => {
@@ -1297,6 +1358,10 @@ document.querySelectorAll('#bar [data-act]').forEach((b) => b.addEventListener('
   else if (a === 'o05') setTol(sim, 0.5);
   else if (a === 'restart') restart();
   else if (a === 'df') setDir(1);
+  else if (a === 'wd') setNight(false);
+  else if (a === 'wn') setNight(true);
+  else if (a === 'wc') setRain(false);
+  else if (a === 'wr') setRain(true);
   else if (a === 'dr') setDir(-1);
   else if (a === 'vr') enterVR();
 }));
@@ -1325,6 +1390,7 @@ function startAudio() {
     const mkNoise = (type, f, q) => { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q || 0.7; const g = ctx.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(ctx.destination); s.start(); return { g, fl }; };
     snd.roll = mkNoise('bandpass', 300, 0.6);
     snd.squeal = mkNoise('highpass', 3200, 1.5);
+    snd.rain = mkNoise('highpass', 1800, 0.5);
     const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 80;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
     const og = ctx.createGain(); og.gain.value = 0; osc.connect(lp); lp.connect(og); og.connect(ctx.destination); osc.start();
@@ -1351,6 +1417,7 @@ function updateAudio() {
   const t = snd.ctx.currentTime, vk = Math.abs(sim.v * 3.6);
   snd.roll.g.gain.setTargetAtTime(Math.min(0.55, vk / 95 * 0.32 + passBoost * 0.3), t, 0.08);   // すれ違い時は轟音
   snd.roll.fl.frequency.setTargetAtTime(200 + vk * 9, t, 0.1);
+  if (snd.rain) snd.rain.g.gain.setTargetAtTime(rainOn ? 0.09 : 0, t, 0.3);
   snd.og.gain.setTargetAtTime(sim.tr > 0.05 ? Math.min(0.09, 0.03 + sim.tr * 0.02) : 0, t, 0.08);
   snd.osc.frequency.setTargetAtTime(70 + vk * 7, t, 0.12);
   const sq = (sim.br > 0.5 && sim.v > 0.2 && sim.v < 7) ? Math.min(0.08, sim.br * 0.02) : 0;
@@ -1450,7 +1517,7 @@ function frame() {
     if (renderer.xr.isPresenting) { pollPads(dt); dragLevers(); }
     if (sim.msg !== lastMsg) { lastMsg = sim.msg; showToast(sim.msg, sim.msgK); }
     if (sim.phase === 'finished' && !lastFinished) { lastFinished = true; }
-    updateTrains(dt);
+    updateTrains(dt); updateRain(dt);
   }
   toastT -= dt; if (toastT < 0) $('#toast').style.opacity = 0;
   SW = sim.dir > 0 ? sim.s : 12255 - sim.s;          // 世界座標上の先頭位置(上り運転は反対向きに走る)
@@ -1474,7 +1541,7 @@ function frame() {
 
 /* ============ 起動 ============ */
 function boot() {
-  buildWorld(); buildTrains(); updateTrains(0); buildCab(); buildPanels(); setupControllers();
+  buildWorld(); buildTrains(); applyWeather(); updateTrains(0); buildCab(); buildPanels(); setupControllers();
   drawATC(); drawSpeed(); drawInfo();
   renderer.setAnimationLoop(frame);
 }
