@@ -100,7 +100,7 @@
       <li>種別: <kbd>T</kbd> で 各駅停車 / 急行(停車中のみ)。<kbd>R</kbd> で最初から</li>
       <li>CS-ATC の制限速度は運転台のATC表示に出ます。超えると自動でブレーキがかかります</li>
       <li>方向: <kbd>D</kbd> または画面下の「方向」で 大井町→溝の口(下り)/ 溝の口→大井町(上り)を切替(発車前のみ)。上り終点の大井町は頭端ホームで、2番線から転線して1番線に入ります</li>
-      <li>対向線を6020系(7両、全駅停車)が約5分間隔で走ります。急行は上野毛でホーム外側の追い越し線を通ります。大岡山は地下駅、自由が丘の上には東横線の高架があります</li>
+      <li>対向線を6020系(7両、全駅停車)が約5分間隔で走ります。上野毛の追い越し線は上り側のみで、上りの急行がホーム外側のそれを通ります。大井町の転線はダブルクロスです。大岡山は地下駅、自由が丘の上には東横線の高架があります</li>
       <li>ドラッグで見回せます。マスコンは運転席の真正面で、上下にドラッグすると動きます(下へ=手前に引く=力行、上へ=奥へ押す=ブレーキ)。スイッチはクリックで操作できます</li>
       <li>VR(Quest): 右スティックを手前で力行・奥でブレーキ / A 前 / B 後 / 左X 種別 / 左Y 最初から / 左スティックで目線の高さ。トリガーでレバーをつかみ、手前に引くと力行、奥へ押すとブレーキ(両手どちらでも可)</li>
     </ul>
@@ -439,9 +439,9 @@ const DTS = { stns: [{ n: '二子新地', r: 'Futako-shinchi', code: 'DT08', tp:
   const ik = stnIdx('上野毛'), tk = stationPos(ik);                 // 上野毛: 急行はホーム外側の追い越し線を通る
   const gK = (s) => sstep((s - (tk - PLAT_BACK - 110)) / 110) * sstep(((tk + PLAT_FWD + 110) - s) / 110);
   KAM.L = (s) => -4.4 * gK(s); KAM.R = (s) => oppLx(s) + 4.4 * gK(s); KAM.t = tk;
-  TRACKS.push({ name: 'kam-L', a: tk - PLAT_BACK - 130, b: tk + PLAT_FWD + 130, lx: KAM.L });
   TRACKS.push({ name: 'kam-R', a: tk - PLAT_BACK - 130, b: tk + PLAT_FWD + 130, lx: KAM.R });
-  TRACKS.push({ name: 'xover', a: 190, b: 340, lx: (s) => oppLx(s) * (1 - crossK(s)) });   // 大井町の渡り線
+  TRACKS.push({ name: 'xover', a: 190, b: 340, lx: (s) => oppLx(s) * (1 - crossK(s)) });   // 大井町のダブルクロス(2本の渡り線がX字に交差)
+  TRACKS.push({ name: 'xover2', a: 190, b: 340, lx: (s) => oppLx(s) * crossK(s) });
   TRACKS.tracks = { pass: [th, WH], mg: [to, WO] };
 })();
 function extents(s) {                               // その位置で架線柱・建物が避けるべき横方向の範囲
@@ -732,8 +732,9 @@ function buildWorld() {
   };
   (function () {
     const th = TRACKS.tracks.pass[0], tpL = TRACKS.find((q) => q.name === 'pass-L'), tpR = TRACKS.find((q) => q.name === 'pass-R');
-    pointsAt(0, KAM.t - PLAT_BACK - 125, -1); pointsAt(0, KAM.t + PLAT_FWD + 125, -1); pointsAt(oppLx(KAM.t), KAM.t - PLAT_BACK - 125, 1); pointsAt(oppLx(KAM.t), KAM.t + PLAT_FWD + 125, 1);
-    pointsAt(0, 200, 1); pointsAt(oppLx(340), 340, -1);
+    pointsAt(oppLx(KAM.t), KAM.t - PLAT_BACK - 125, 1); pointsAt(oppLx(KAM.t), KAM.t + PLAT_FWD + 125, 1);
+    pointsAt(0, 200, 1); pointsAt(oppLx(340), 340, -1); pointsAt(oppLx(200), 200, -1); pointsAt(0, 340, 1);
+    put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(270) / 2, 0.08, 270, 0.55); put(box(1.6, 0.06, 2.6, mat(0x555a60)), oppLx(270) / 2, 0.08, 270, -0.55);   // 交差部(ダイヤモンドクロッシング)
     pointsAt(0, th - 285, -1); pointsAt(0, th + 150, -1);
     pointsAt(oppLx(th - 285), th - 285, 1); pointsAt(oppLx(th + 150), th + 150, 1);
     signal(-2.6, th + 16, 0x3ad17a); signal(tpL.lx(th + 16) - 2.6, th + 16, 0xe04848);
@@ -1293,7 +1294,7 @@ document.querySelectorAll('#bar [data-act]').forEach((b) => b.addEventListener('
 
 function laneLx(s) {                                   // 自列車の走る線路の横位置(自線路=0)。急行は上野毛で追い越し線、上り運転は対向線→大井町で1番線へ転線
   const ex = sim.type === 'express';
-  if (sim.dir > 0) return ex ? KAM.L(s) : 0;
+  if (sim.dir > 0) return 0;                       // 上野毛の追い越し線は上り側のみ(下りは用地の都合でなし)
   return (ex ? KAM.R(s) : oppLx(s)) * (1 - crossK(s));
 }
 function restart() { const t = sim.type, tl = sim.tol, d = sim.dir; sim = createSim(t, tl, d); lastFinished = false; }
