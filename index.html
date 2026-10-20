@@ -394,6 +394,10 @@ function platW(i, s) {                              // ホームの幅(島式は
   const o = ISL[i]; if (!o) return EXT[i] ? EXT[i].W : PLAT_STD_W;
   return Math.max(PLAT_END_W, PLAT_END_W + 2 * o.D * (islB(o, s) - o.bEnd));
 }
+function platWs(i, s) {                             // 対向線路の位置用に、ホーム幅の折れ点をなめらかにした幅(線路が急に横へ折れないように)
+  const o = ISL[i], x = islB(o, s) - o.bEnd;
+  return PLAT_END_W + 2 * o.D * (x + Math.sqrt(x * x + 0.0144)) / 2;
+}
 const OPP_STD = 3.8, OPP_RAMP = 70;                // 対向線路との間隔(通常3.8m)。島式ホームの駅では広がる
 const sstep = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 function oppLx(s) {                                 // 対向線路の中心(自列車の線路中心からの横位置)
@@ -401,7 +405,7 @@ function oppLx(s) {                                 // 対向線路の中心(自
   for (const k in ISL) {
     const tp = stationPos(+k);
     const g = sstep((s - (tp - PLAT_BACK - OPP_RAMP)) / OPP_RAMP) * sstep(((tp + PLAT_FWD + OPP_RAMP) - s) / OPP_RAMP);
-    if (g > 0) lx += g * (PLAT_EDGE * 2 + platW(+k, s) - OPP_STD);
+    if (g > 0) lx += g * (PLAT_EDGE * 2 + platWs(+k, s) - OPP_STD);
   }
   return lx;
 }
@@ -451,7 +455,11 @@ function extents(s) {                               // その位置で架線柱�
   for (const d of DTS.out) if (s >= d.tp - DTS.back - 5 && s <= d.tp + PLAT_FWD + 5) { mn -= PLAT_EDGE + DTS.OW; mx += PLAT_EDGE + DTS.OW; break; }
   return [mn, mx];
 }
-function oppYaw(s) { return -Math.atan((oppLx(s + 1) - oppLx(s - 1)) / 2); }
+function laneYaw(f, s) {                              // 横ずれした線路の、実際の進行方向に合わせた向き(曲線上でもレールがつながる)
+  const a = loc(s - 0.5, f(s - 0.5)), b = loc(s + 0.5, f(s + 0.5));
+  return Math.atan2(-(b[0] - a[0]), -(b[1] - a[1])) + loc(s, f(s))[2];
+}
+function oppYaw(s) { return laneYaw(oppLx, s); }
 /* ===== 縦断線形: 大岡山は地下駅(北千束〜大岡山の中間あたりから地下へ、駅を出るとすぐ地上へ) ===== */
 const TUN = { d0: 4250, d1: 4510, u0: 4810, u1: 5030, depth: 7, CL: -11.5, CR: 15.5 };
 function gy(s) {
@@ -499,8 +507,9 @@ function buildWorld() {
   extraTracks.forEach((q) => {
     const n = Math.ceil((q.b - q.a) / SEG);
     for (let j = 0; j < n; j++) {
-      const s = q.a + SEG / 2 + SEG * j, lo = q.lx(s), yw = -Math.atan((q.lx(s + 1) - q.lx(s - 1)) / 2);
-      inst(ballastX, xi, lo, 0, s, yw); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw); inst(wiresX, xi, lo, 5.1, s, yw); xi++;
+      const s = q.a + SEG / 2 + SEG * j, lo = q.lx(s), yw = laneYaw(q.lx, s);
+      const p1 = loc(s - SEG / 2, q.lx(s - SEG / 2)), p2 = loc(s + SEG / 2, q.lx(s + SEG / 2)), zs = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SEG;   // 曲線の外側/内側で区間の長さが変わるぶん伸縮してレールをつなぐ
+      inst(ballastX, xi, lo, 0, s, yw, 1, 1, zs); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
     }
   });
   scene.add(ballastX); scene.add(railsX); scene.add(wiresX);
@@ -899,7 +908,7 @@ function updateServices() {
         if (sc < sv.tr.a || sc > sv.tr.b) { car.visible = false; continue; }
         car.visible = true;
         const lxf = sv.tr.lx, l = loc(sc, lxf(sc));
-        car.position.set(l[0], gy(sc), l[1]); car.rotation.order = 'YXZ'; car.rotation.set(gp(sc), -l[2] - Math.atan((lxf(sc + 1) - lxf(sc - 1)) / 2), 0);
+        car.position.set(l[0], gy(sc), l[1]); car.rotation.order = 'YXZ'; car.rotation.set(gp(sc), -l[2] + laneYaw(lxf, sc), 0);
       }
       const dist = SW < lo ? lo - SW : (SW > hi ? SW - hi : 0);
       if (dist < 60) { const vt = Math.abs(posU(sv, age + 1) - u); passBoost = Math.max(passBoost, 0.5 * (1 - dist / 60) * Math.min(1, (vt + Math.abs(sim.v)) / 28)); }
@@ -1447,7 +1456,7 @@ function frame() {
   SW = sim.dir > 0 ? sim.s : 12255 - sim.s;          // 世界座標上の先頭位置(上り運転は反対向きに走る)
   const lane = (s) => laneLx(s), ln = lane(SW), pp = P(SW), pl = loc(SW, ln);
   dolly.position.set(pl[0], 1.1 + gy(SW), pl[1]);     // 運転室の床はレール面より約1.1m高い
-  dolly.rotation.y = -pp.psi - Math.atan((lane(SW + 1) - lane(SW - 1)) / 2) + (sim.dir < 0 ? Math.PI : 0);
+  dolly.rotation.y = -pl[2] + laneYaw(lane, SW) + (sim.dir < 0 ? Math.PI : 0);
   if (!renderer.xr.isPresenting) camera.rotation.set(pitch, yaw, 0, 'YXZ');
   if (stick) stick.rotation.x = -(POWER_AWAY ? 1 : -1) * leverAngle(sim.lever);
   hudT -= dt;
