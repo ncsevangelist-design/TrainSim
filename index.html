@@ -423,10 +423,10 @@ function updateWindshield(dt) {
   const ph = (wsT % WS.period) / WS.period, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2;             // 0→1→0
   const ang = wiperOn ? (-WS.thMax + 2 * WS.thMax * (0.5 - 0.5 * Math.cos(tri * Math.PI))) : -WS.thMax;
   // 雨滴の発生(走るほど正面に当たる)
-  const vk = Math.abs(sim.v) * 3.6, rate = 55 + vk * 2.2;
-  let nSpawn = rate * dt; while (nSpawn > 0 && wsDrops.length < 1100) {
+  const vk = Math.abs(sim.v) * 3.6, rate = 150 + vk * 4;
+  let nSpawn = rate * dt; while (nSpawn > 0 && wsDrops.length < 2400) {
     if (nSpawn < 1 && Math.random() > nSpawn) break; nSpawn -= 1;
-    const q = Math.random(), r = q < 0.7 ? 1 + Math.random() * 1.6 : q < 0.95 ? 2.6 + Math.random() * 2.4 : 5 + Math.random() * 4;
+    const q = Math.random(), r = q < 0.6 ? 2 + Math.random() * 2.2 : q < 0.92 ? 4.5 + Math.random() * 3 : 8 + Math.random() * 6;
     wsDrops.push({ x: Math.random() * WS.w, y: Math.random() * WS.h, r: r });
   }
   // ワイパーが払った扇形の雨滴を消す
@@ -441,14 +441,15 @@ function updateWindshield(dt) {
   }
   wsAng = ang;
   // 大きな雨滴はゆっくり流れ落ちる
-  for (const d of wsDrops) if (d.r > 4.5) { d.y += dt * (6 + d.r * 2); if (d.y > WS.h + 6) d.y = -6; }
+  for (const d of wsDrops) if (d.r > 7.5) { d.y += dt * (4 + d.r * 1.5); if (d.y > WS.h + 6) d.y = -6; }
   // 描画
   const c = wsCtx; c.clearRect(0, 0, WS.w, WS.h);
   const lit = nightOn ? 0.55 : 1;
   for (const d of wsDrops) {
-    c.fillStyle = 'rgba(' + (nightOn ? '205,215,230' : '236,241,246') + ',' + (0.32 * lit).toFixed(2) + ')';
+    c.fillStyle = 'rgba(' + (nightOn ? '190,202,222' : '226,233,240') + ',' + (0.42 * lit).toFixed(2) + ')';
     c.beginPath(); c.arc(d.x, d.y, d.r, 0, 6.283); c.fill();
-    if (d.r > 2.4) { c.strokeStyle = 'rgba(255,255,255,' + (0.45 * lit).toFixed(2) + ')'; c.lineWidth = 1; c.beginPath(); c.arc(d.x, d.y, d.r, 0.2, 2.6); c.stroke(); }
+    c.strokeStyle = 'rgba(40,52,64,' + (0.35 * lit).toFixed(2) + ')'; c.lineWidth = 1; c.beginPath(); c.arc(d.x, d.y, d.r, 3.4, 6.0); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,' + (0.7 * lit).toFixed(2) + ')'; c.beginPath(); c.arc(d.x, d.y, d.r * 0.8, 0.3, 2.6); c.stroke();
   }
   // ワイパー本体
   c.save(); c.translate(pivX, pivY); c.rotate(ang);
@@ -614,9 +615,9 @@ function buildWorld() {
     const n = Math.ceil((q.b - q.a) / SEGX);
     for (let j = 0; j < n; j++) {
       const s = q.a + SEGX / 2 + SEGX * j, lo = q.lx(s), yw = laneYaw(q.lx, s);
-      if (q.name && /^(kam|pass|xover)/.test(q.name) && Math.min(Math.abs(lo), Math.abs(lo - oppLx(s))) < 0.9) continue;   // 本線と重なる区間は描かない(分岐の手前でレールが二重にならないように)
+      if (q.name && /^(kam|pass|xover)/.test(q.name) && Math.min(Math.abs(lo), Math.abs(lo - oppLx(s))) < 0.12) continue;   // 本線とぴったり重なる区間だけ省く(分岐は本線のレールにつなげる)
       const p1 = loc(s - SEGX / 2, q.lx(s - SEGX / 2)), p2 = loc(s + SEGX / 2, q.lx(s + SEGX / 2)), zs = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SEGX;   // 曲線の外側/内側で区間の長さが変わるぶん伸縮してレールをつなぐ
-      inst(ballastX, xi, lo, 0, s, yw, 1, 1, zs); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
+      inst(ballastX, xi, lo, q.name ? 0.012 : 0, s, yw, 1, 1, zs); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
     }
   });
   ballastX.count = xi; railsX.count = xi * 2; wiresX.count = xi;
