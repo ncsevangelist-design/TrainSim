@@ -405,7 +405,7 @@ function applyWeather() {
   try { localStorage.setItem('oimachi.night', n ? '1' : '0'); localStorage.setItem('oimachi.rain', r ? '1' : '0'); } catch (e) {}
 }
 /* ===== 前面ガラスの雨滴とワイパー: ワイパーが払った扇形だけ視界が澄み、それ以外は雨滴で霞む ===== */
-window.__wsd = () => wsDrops.length; let wsDrawT = 0, wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
+window.__wsd = () => wsDrops.length; window.__uw = (d) => updateWindshield(d); window.__sw = (v) => setWiper(v); let wsDrawT = 0, wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
 const WS = { w: 512, h: 400, px: 0.6, py: 1.06, L: 1.08, thMax: 62 * Math.PI / 180, period: 1.7 };
 try { wiperOn = localStorage.getItem('oimachi.wiper') !== '0'; } catch (e) {}
 function setWiper(v) { wiperOn = v; try { localStorage.setItem('oimachi.wiper', v ? '1' : '0'); } catch (e) {} const el = document.getElementById('wp'); if (el) el.classList.toggle('on', v); }
@@ -426,10 +426,11 @@ function updateWindshield(dt) {
   const ang = wiperOn ? (-WS.thMax + 2 * WS.thMax * (0.5 - 0.5 * Math.cos(tri * Math.PI))) : -WS.thMax;
   // 雨滴の発生(走るほど正面に当たる)
   const vk = Math.abs(sim.v) * 3.6, rate = 150 + vk * 4;
-  let nSpawn = gy(SW) < -5.5 ? 0 : rate * dt; while (nSpawn > 0 && wsDrops.length < 2400) {
+  let nSpawn = gy(SW) < -5.5 ? 0 : rate * dt; while (nSpawn > 0) {
     if (nSpawn < 1 && Math.random() > nSpawn) break; nSpawn -= 1;
     const q = Math.random(), r = q < 0.6 ? 2 + Math.random() * 2.2 : q < 0.92 ? 4.5 + Math.random() * 3 : 8 + Math.random() * 6;
-    wsDrops.push({ x: Math.random() * WS.w, y: Math.random() * WS.h, r: r });
+    const nd = { x: Math.random() * WS.w, y: Math.random() * WS.h, r: r };
+    if (wsDrops.length < 1800) wsDrops.push(nd); else wsDrops[(Math.random() * wsDrops.length) | 0] = nd;   // 満杯なら古い雨滴と入れ替え(拭けない範囲で埋まって新しい雨滴が付かなくなるのを防ぐ)
   }
   // ワイパーが払った扇形の雨滴を消す
   if (wsAng > -9 && wiperOn) {
