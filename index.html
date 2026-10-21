@@ -405,7 +405,7 @@ function applyWeather() {
   try { localStorage.setItem('oimachi.night', n ? '1' : '0'); localStorage.setItem('oimachi.rain', r ? '1' : '0'); } catch (e) {}
 }
 /* ===== 前面ガラスの雨滴とワイパー: ワイパーが払った扇形だけ視界が澄み、それ以外は雨滴で霞む ===== */
-let wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
+let wsDrawT = 0, wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
 const WS = { w: 512, h: 400, px: 0.6, py: 1.06, L: 1.08, thMax: 62 * Math.PI / 180, period: 1.7 };
 try { wiperOn = localStorage.getItem('oimachi.wiper') !== '0'; } catch (e) {}
 function setWiper(v) { wiperOn = v; try { localStorage.setItem('oimachi.wiper', v ? '1' : '0'); } catch (e) {} const el = document.getElementById('wp'); if (el) el.classList.toggle('on', v); }
@@ -446,9 +446,10 @@ function updateWindshield(dt) {
   for (const d of wsDrops) if (d.r > 7.5) { d.y += dt * (4 + d.r * 1.5); if (d.y > WS.h + 6) d.y = -6; }
   // 描画
   const c = wsCtx; c.clearRect(0, 0, WS.w, WS.h);
-  const lit = nightOn ? 0.55 : 1;
+  wsDrawT += dt; if (wsDrawT < 0.033) return; wsDrawT = 0;      // 描画は約30回/秒に間引く
+  const lit = 1;
   for (const d of wsDrops) {
-    c.fillStyle = 'rgba(' + (nightOn ? '190,202,222' : '226,233,240') + ',' + (0.42 * lit).toFixed(2) + ')';
+    c.fillStyle = 'rgba(' + (nightOn ? '214,224,240' : '226,233,240') + ',' + (nightOn ? 0.5 : 0.42).toFixed(2) + ')';
     c.beginPath(); c.arc(d.x, d.y, d.r, 0, 6.283); c.fill();
     c.strokeStyle = 'rgba(40,52,64,' + (0.35 * lit).toFixed(2) + ')'; c.lineWidth = 1; c.beginPath(); c.arc(d.x, d.y, d.r, 3.4, 6.0); c.stroke();
     c.strokeStyle = 'rgba(255,255,255,' + (0.7 * lit).toFixed(2) + ')'; c.beginPath(); c.arc(d.x, d.y, d.r * 0.8, 0.3, 2.6); c.stroke();
