@@ -373,7 +373,9 @@ const rainLines = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ 
 rainLines.frustumCulled = false; rainLines.visible = false; dolly.add(rainLines);
 for (let i = 0; i < RAIN_N; i++) { rainX[i] = (Math.random() - 0.5) * 30; rainY[i] = -2 + Math.random() * 16; rainZ[i] = -1.8 - Math.random() * 70; }
 function updateRain(dt) {
-  if (!rainOn) return;
+  const under = gy(SW) < -5.5;                          // 地下(大岡山のトンネル内)では雨は降らない
+  rainLines.visible = rainOn && !under;
+  if (!rainOn || under) return;
   const vt = Math.abs(sim.v), fall = 15 * dt;
   for (let i = 0; i < RAIN_N; i++) {
     rainY[i] -= fall; rainZ[i] += vt * dt;
@@ -424,7 +426,7 @@ function updateWindshield(dt) {
   const ang = wiperOn ? (-WS.thMax + 2 * WS.thMax * (0.5 - 0.5 * Math.cos(tri * Math.PI))) : -WS.thMax;
   // 雨滴の発生(走るほど正面に当たる)
   const vk = Math.abs(sim.v) * 3.6, rate = 150 + vk * 4;
-  let nSpawn = rate * dt; while (nSpawn > 0 && wsDrops.length < 2400) {
+  let nSpawn = gy(SW) < -5.5 ? 0 : rate * dt; while (nSpawn > 0 && wsDrops.length < 2400) {
     if (nSpawn < 1 && Math.random() > nSpawn) break; nSpawn -= 1;
     const q = Math.random(), r = q < 0.6 ? 2 + Math.random() * 2.2 : q < 0.92 ? 4.5 + Math.random() * 3 : 8 + Math.random() * 6;
     wsDrops.push({ x: Math.random() * WS.w, y: Math.random() * WS.h, r: r });
@@ -1477,7 +1479,7 @@ function updateAudio() {
   const t = snd.ctx.currentTime, vk = Math.abs(sim.v * 3.6);
   snd.roll.g.gain.setTargetAtTime(Math.min(0.55, vk / 95 * 0.32 + passBoost * 0.3), t, 0.08);   // すれ違い時は轟音
   snd.roll.fl.frequency.setTargetAtTime(200 + vk * 9, t, 0.1);
-  if (snd.rain) snd.rain.g.gain.setTargetAtTime(rainOn ? 0.09 : 0, t, 0.3);
+  if (snd.rain) snd.rain.g.gain.setTargetAtTime(rainOn ? (gy(SW) < -5.5 ? 0.012 : 0.09) : 0, t, 0.3);
   snd.og.gain.setTargetAtTime(sim.tr > 0.05 ? Math.min(0.09, 0.03 + sim.tr * 0.02) : 0, t, 0.08);
   snd.osc.frequency.setTargetAtTime(70 + vk * 7, t, 0.12);
   const sq = (sim.br > 0.5 && sim.v > 0.2 && sim.v < 7) ? Math.min(0.08, sim.br * 0.02) : 0;
