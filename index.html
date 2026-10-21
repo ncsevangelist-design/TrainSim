@@ -405,7 +405,7 @@ function applyWeather() {
   try { localStorage.setItem('oimachi.night', n ? '1' : '0'); localStorage.setItem('oimachi.rain', r ? '1' : '0'); } catch (e) {}
 }
 /* ===== 前面ガラスの雨滴とワイパー: ワイパーが払った扇形だけ視界が澄み、それ以外は雨滴で霞む ===== */
-let wsDrawT = 0, wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
+window.__wsd = () => wsDrops.length; let wsDrawT = 0, wiperOn = true, wsCv = null, wsCtx = null, wsTex = null, wsMesh = null, wsT = 0, wsAng = -1, wsDrops = [];
 const WS = { w: 512, h: 400, px: 0.6, py: 1.06, L: 1.08, thMax: 62 * Math.PI / 180, period: 1.7 };
 try { wiperOn = localStorage.getItem('oimachi.wiper') !== '0'; } catch (e) {}
 function setWiper(v) { wiperOn = v; try { localStorage.setItem('oimachi.wiper', v ? '1' : '0'); } catch (e) {} const el = document.getElementById('wp'); if (el) el.classList.toggle('on', v); }
@@ -1391,6 +1391,7 @@ let keyT = 0;
 window.addEventListener('keydown', (e) => {
   if (!started) return;
   const k = e.key.toLowerCase(), now = performance.now();
+  if (e.repeat && 'lhkdtfvbr'.includes(k) && k.length === 1) return;     // 押しっぱなしで切替が往復しない
   if (k === 'arrowup' || k === 'w') { if (now - keyT > 130) { setLever(sim, sim.lever + 1); keyT = now; } e.preventDefault(); }
   else if (k === 'arrowdown' || k === 's') { if (now - keyT > 130) { setLever(sim, sim.lever - 1); keyT = now; } e.preventDefault(); }
   else if (k === ' ' || k === '0' || k === 'n') { setLever(sim, 0); e.preventDefault(); }
@@ -1406,7 +1407,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 document.querySelectorAll('#bar [data-act]').forEach((b) => b.addEventListener('click', () => {
-  const a = b.dataset.act;
+  const a = b.dataset.act; b.blur();                   // フォーカスが残るとスペース/Enterで再度押されてしまう
   if (a === 'p') setLever(sim, sim.lever + 1);
   else if (a === 'b') setLever(sim, sim.lever - 1);
   else if (a === 'n') setLever(sim, 0);
