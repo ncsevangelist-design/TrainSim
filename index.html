@@ -577,9 +577,10 @@ const DTS = { stns: [{ n: '二子玉川', r: 'Futako-tamagawa', code: 'DT07', tp
   TRACKS.push({ name: 'pass-R', a: th - 300, b: th + 155, lx: (s) => oppLx(s) + (PLAT_EDGE * 2 + WH) * gH(s) });
   const io = stnIdx('大岡山'), to = stationPos(io), WO = 5.0;
   EXT[io] = { W: WO };
-  const gO = (s) => sstep(((to + 800) - s) / 300);           // 目黒線は地下の大岡山から並走し、地上へ出て離れていく
-  TRACKS.push({ name: 'mg-down', a: to - 250, b: to + 800, lx: (s) => -(PLAT_EDGE * 2 + WO) - FAR * (1 - gO(s)) });
-  TRACKS.push({ name: 'mg-up', a: to - 250, b: to + 800, lx: (s) => oppLx(s) + (PLAT_EDGE * 2 + WO) + FAR * (1 - gO(s)) });
+  const gO = (s) => sstep((s - (to + 170)) / 230);            // 目黒線(下り)は緑が丘の手前で左(奥沢方向)へ分かれていく
+  const MGU_END = to + 330;                                   // 目黒線(上り)は大井町線の下をくぐって大岡山で並走 → 地上線はここのポータルで終わる
+  TRACKS.push({ name: 'mg-down', a: to - 250, b: to + 600, lx: (s) => -(PLAT_EDGE * 2 + WO) - FAR * gO(s) });
+  TRACKS.push({ name: 'mg-up', a: to - 250, b: MGU_END, lx: (s) => oppLx(s) + (PLAT_EDGE * 2 + WO) });
   const dtIn = (s) => sstep((s - DTS.a) / 220);
   const WM = 8.0, ex = (PLAT_EDGE * 2 + WM - 3.8);
   for (const nm of ['二子玉川', '溝の口']) EXT[stnIdx(nm)] = { W: WM };   // 二子玉川・溝の口: 島式ホーム2本(大井町線と田園都市線が対面)
@@ -912,6 +913,14 @@ function buildWorld() {
   });
   put(box(26, 6, 1.2, mat(0xb9b6ae)), 1.9, 3.0, -157.8);
   put(box(26, 0.5, 6, roofM), 1.9, 6.2, -153);
+  // 大岡山: 目黒線(上り)が大井町線の下へ潜るポータル
+  (function () {
+    const tr = TRACKS.find((q) => q.name === 'mg-up'), se = tr.b, lx = tr.lx(se), yw = laneYaw(tr.lx, se);
+    put(box(11, 7.5, 3, mat(0x9b9e9a)), lx, 2.4, se + 1.5, yw);
+    put(box(5.2, 5.2, 0.6, mat(0x0a0b0c)), lx, 2.7, se - 0.05, yw);
+    put(box(11, 0.4, 3.2, mat(0x6d706c)), lx, 6.2, se + 1.4, yw);
+    for (const sd of [-1, 1]) put(box(0.5, 4.5, 8, mat(0xb0ada5)), lx + sd * 4.2, 2.0, se - 4, yw);   // 擁壁
+  })();
   // 自由が丘: 東横線の高架(ガード)が斜めに上をまたぐ
   (function () {
     const s0 = 6275, lx0 = 2.0, phi = 0.62, conc2 = mat(0x9b9e9a), dark = mat(0x5f6460);
@@ -1014,7 +1023,7 @@ function profileU(stops, L, V, A, B, DW) {              // stops: 走行距離u[
 }
 function defService(o) {
   const tr = TRACKS.find((q) => q.name === o.trk), m = o.dir > 0 ? 1 : -1;
-  const s0 = m > 0 ? tr.a - 250 : tr.b + 250, s1 = m > 0 ? tr.b + 250 : tr.a - 250;
+  const s0 = m > 0 ? tr.a - 250 : tr.b + (o.ext !== undefined ? o.ext : 250), s1 = m > 0 ? tr.b + 250 : tr.a - 250;
   const stops = o.stops.map((hs) => m * (hs - s0)).sort((a, b) => a - b);
   const prof = profileU(stops, Math.abs(s1 - s0), o.V, 0.85, 0.95, o.dw);
   SERVICES.push(Object.assign({ tr: tr, m: m, s0: s0, prof: prof, N: Math.ceil(prof.T / o.H) + 1, fleet: [] }, o));
@@ -1022,7 +1031,7 @@ function defService(o) {
 (function () {
   const to = TRACKS.tracks.mg[0];
   defService({ trk: 'mg-down', dir: 1, n: 6, stops: [to], V: 80 / 3.6, dw: 24, H: 240, off: 0, band: '#1b6fc4', kind: '各停', dest: '日吉' });
-  defService({ trk: 'mg-up', dir: -1, n: 6, stops: [to - 128], V: 80 / 3.6, dw: 24, H: 240, off: 110, band: '#1b6fc4', kind: '各停', dest: '目黒' });
+  defService({ trk: 'mg-up', ext: 0, dir: -1, n: 6, stops: [to - 128], V: 80 / 3.6, dw: 24, H: 240, off: 110, band: '#1b6fc4', kind: '各停', dest: '目黒' });
   defService({ trk: 'dt-down', dir: 1, n: 10, stops: DTS.stns.map((d) => d.tp), V: 85 / 3.6, dw: 22, H: 150, off: 20, band: '#1fa35a', kind: '準急', dest: '中央林間' });
   defService({ trk: 'dt-up', dir: -1, n: 10, stops: DTS.stns.map((d) => d.tp - 203), V: 85 / 3.6, dw: 22, H: 150, off: 95, band: '#1fa35a', kind: '準急', dest: '渋谷' });
 })();
