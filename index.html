@@ -663,17 +663,24 @@ function buildWorld() {
   const ballastX = new THREE.InstancedMesh(new THREE.PlaneGeometry(3.4, SEGX + 0.05).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: btX }), nX);
   const railsX = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 0.16, SEGX + 0.1), rails.material, nX * 2);
   const wiresX = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.03, SEGX + 0.1), wires.material, nX);
-  let xi = 0;
+  let xi = 0, rxi = 0;
   extraTracks.forEach((q) => {
-    const n = Math.ceil((q.b - q.a) / SEGX);
+    const n = Math.ceil((q.b - q.a) / SEGX), isBr = !!(q.name && /^(kam|pass|xover)/.test(q.name));
     for (let j = 0; j < n; j++) {
-      const s = q.a + SEGX / 2 + SEGX * j, lo = q.lx(s), yw = laneYaw(q.lx, s);
-      if (q.name && /^(kam|pass|xover)/.test(q.name) && Math.min(Math.abs(lo), Math.abs(lo - oppLx(s))) < 0.12) continue;   // 本線とぴったり重なる区間だけ省く(分岐は本線のレールにつなげる)
+      const s = q.a + SEGX / 2 + SEGX * j, lo = q.lx(s), yw = laneYaw(q.lx, s), op = oppLx(s);
       const p1 = loc(s - SEGX / 2, q.lx(s - SEGX / 2)), p2 = loc(s + SEGX / 2, q.lx(s + SEGX / 2)), zs = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SEGX;   // 曲線の外側/内側で区間の長さが変わるぶん伸縮してレールをつなぐ
-      inst(ballastX, xi, lo, q.name ? 0.012 : 0, s, yw, 1, 1, zs); inst(railsX, xi * 2, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, xi * 2 + 1, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
+      if (isBr) {                                                // 分岐線: 本線との距離dに応じて描く。外側のレールは分岐点(d=0)で本線のレールとぴったり重なり、先端がつながる
+        const m = Math.abs(lo) < Math.abs(lo - op) ? 0 : op, d = lo - m, sg = d >= 0 ? 1 : -1;
+        inst(railsX, rxi++, lo + sg * 0.72, 0.08, s, yw, 1, 1, zs);
+        if (Math.abs(d) > 1.3) inst(railsX, rxi++, lo - sg * 0.72, 0.08, s, yw, 1, 1, zs);
+        if (Math.abs(d) < 0.12) continue;                        // 本線とぴったり重なる区間は道床・架線を省く
+        inst(ballastX, xi, lo, 0.012, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
+      } else {
+        inst(ballastX, xi, lo, q.name ? 0.012 : 0, s, yw, 1, 1, zs); inst(railsX, rxi++, lo - 0.72, 0.08, s, yw, 1, 1, zs); inst(railsX, rxi++, lo + 0.72, 0.08, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
+      }
     }
   });
-  ballastX.count = xi; railsX.count = xi * 2; wiresX.count = xi;
+  ballastX.count = xi; railsX.count = rxi; wiresX.count = xi;
   scene.add(ballastX); scene.add(railsX); scene.add(wiresX);
   WX.bal = [ballast.material, ballastX.material];
 
@@ -747,7 +754,7 @@ function buildWorld() {
 
   // 駅
   const roofM = mat(0xe9e6df), postM = mat(0x8e949a);
-  const PL = 150, PSEG = 5, NPS = 31, NRF = 26;
+  const PL = 150, PSEG = 2.5, NPS = 62, NRF = 52;
   const NS = STATIONS.length;
   const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 3.0, 0.16), postM, NS * 24 + 160); let pi = 0;
   const ribs = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, 0.12), mat(0xc9c5bc), NS * 24); let ri = 0;
@@ -762,10 +769,10 @@ function buildWorld() {
   const kcx = kcv.getContext('2d'); kcx.fillStyle = '#e6c200'; kcx.fillRect(0, 0, 32, 32); kcx.fillStyle = '#b89800';
   for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) { kcx.beginPath(); kcx.arc(8 + a * 16, 8 + b * 16, 4, 0, 7); kcx.fill(); }
   const tactTex = new THREE.CanvasTexture(kcv); tactTex.wrapS = tactTex.wrapT = THREE.RepeatWrapping; tactTex.repeat.set(2, (PSEG + 0.1) / 0.3); tactTex.anisotropy = maxAniso;
-  const pbase = new THREE.InstancedMesh(new THREE.BoxGeometry(4.4, 1.0, PSEG + 0.1), mat(0x8a8883), NS * NPS * 2 + 160);
-  const ptop = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tileTex }), NS * NPS * 2 + 160);
-  const ptact = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.6, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tactTex }), NS * NPS * 2 + 700);
-  const proof = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, PSEG + 0.1), roofM, NS * NRF * 2 + 160);
+  const pbase = new THREE.InstancedMesh(new THREE.BoxGeometry(4.4, 1.0, PSEG + 0.1), mat(0x8a8883), NS * NPS * 2 + 1500);
+  const ptop = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tileTex }), NS * NPS * 2 + 1500);
+  const ptact = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.6, PSEG + 0.1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tactTex }), NS * NPS * 2 + 3500);
+  const proof = new THREE.InstancedMesh(new THREE.BoxGeometry(4.8, 0.14, PSEG + 0.1), roofM, NS * NRF * 2 + 800);
   let pbi = 0, pri = 0, tci = 0;
   WX.ptop = ptop.material; WX.ptact = ptact.material; WX.roof = roofM;
   const distM = [10, 20, 30, 40, 50].map((d) => {
@@ -783,17 +790,52 @@ function buildWorld() {
   mg.font = '700 34px ' + JPF; mg.fillText('位置', 128, 124);
   const cardM = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(mc) });
 
+  // 島式ホームは両側の線路に合わせた連続した帯メッシュで作る(5m単位の箱だと縁がギザギザになるため)
+  [ptop.material, ptact.material, pbase.material, roofM].forEach((m) => { m.side = THREE.DoubleSide; });
+  function ribbon(sA, sB, step, fL, fR, y, nrm, material, uvk) {      // 左右の縁(fL,fR: 自線路中心からの横位置)の間を帯でつなぐ
+    const n = Math.max(1, Math.round((sB - sA) / step)), pos = [], nor = [], uv = [], idx = [];
+    for (let k = 0; k <= n; k++) {
+      const s = sA + (sB - sA) * k / n, a = fL(s), b = fR(s), l1 = loc(s, a), l2 = loc(s, b);
+      pos.push(l1[0], y, l1[1], l2[0], y, l2[1]); nor.push(0, nrm, 0, 0, nrm, 0);
+      uv.push(0, s * uvk[1], (b - a) * uvk[0], s * uvk[1]);
+      if (k < n) { const i = k * 2; idx.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, material); m.frustumCulled = false; scene.add(m); return m;
+  }
+  function wallStrip(sA, sB, step, f, y0, y1, material) {             // 縁に沿った垂直な壁(ホームの側面)
+    const n = Math.max(1, Math.round((sB - sA) / step)), pos = [], idx = [];
+    for (let k = 0; k <= n; k++) { const s = sA + (sB - sA) * k / n, l = loc(s, f(s)); pos.push(l[0], y0, l[1], l[0], y1, l[1]); if (k < n) { const i = k * 2; idx.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, material); m.frustumCulled = false; scene.add(m); return m;
+  }
+  const islBuild = (tp) => {
+    const A = tp - PLAT_BACK, B = tp + PLAT_FWD, E = PLAT_EDGE, R = (s) => oppLx(s) - E, h = 1.25;
+    ribbon(A, B, h, () => E, R, 1.004, 1, ptop.material, [1 / 4.4, 1 / (PSEG + 0.1)]);
+    wallStrip(A, B, h, () => E, 0, 1.0, pbase.material); wallStrip(A, B, h, R, 0, 1.0, pbase.material);
+    ribbon(A, B, h, () => E + 0.1, () => E + 0.7, 1.008, 1, ptact.material, [1 / 0.6, 1 / (PSEG + 0.1)]);
+    ribbon(A, B, h, (s) => R(s) - 0.7, (s) => R(s) - 0.1, 1.008, 1, ptact.material, [1 / 0.6, 1 / (PSEG + 0.1)]);
+    const rA = tp - 143, rB = rA + NRF * PSEG;
+    ribbon(rA, rB, h, () => E - 0.2, (s) => R(s) + 0.2, 4.07, 1, roofM, [0, 0]);
+    ribbon(rA, rB, h, () => E - 0.2, (s) => R(s) + 0.2, 3.93, -1, roofM, [0, 0]);
+  };
+  const ISLC = (s) => oppLx(s) / 2;                                    // 島式ホームの中心線(両側の線路の中間)
+  const islY = (s) => laneYaw(ISLC, s);
+  const islZ = (s) => { const a = loc(s - PSEG / 2, ISLC(s - PSEG / 2)), b = loc(s + PSEG / 2, ISLC(s + PSEG / 2)); return Math.hypot(b[0] - a[0], b[1] - a[1]) / PSEG; };
   STATIONS.forEach((st, i) => {
     const tp = stationPos(i);
     const sd = st.side || -1;   // ホーム側: -1=左, +1=右(島式)
     const faceY = sd < 0 ? Math.PI / 2 : -Math.PI / 2;
     const isl = !!ISL[i];
     for (let j = 0; j < NPS; j++) {                                   // ホームは5mずつ、線形と幅の変化に沿って並べる
-      const s = tp - PLAT_BACK + PSEG / 2 + PSEG * j, w = platW(i, s), c = sd * (PLAT_EDGE + w / 2);
-      inst(pbase, pbi, c, 0.5, s, 0, w / 4.4); inst(ptop, pbi, c, 1.004, s, 0, w / 4.4); inst(ptact, tci++, sd * 2.1, 1.008, s); pbi++;
+      const s = tp - PLAT_BACK + PSEG / 2 + PSEG * j, w = isl ? oppLx(s) - 2 * PLAT_EDGE : platW(i, s), c = isl ? oppLx(s) / 2 : sd * (PLAT_EDGE + w / 2);   // 島式は両側の線路の位置から幅と中心を決める(縁がなめらかにつながる)
+      if (isl) continue;
+      inst(pbase, pbi, c, 0.5, s, 0, w / 4.4); inst(ptop, pbi, c, 1.004, s, 0, w / 4.4);
+      inst(ptact, tci++, sd * 2.1, 1.008, s); pbi++;
     }
-    for (let j = 0; j < NRF; j++) { const s = tp - 143 + PSEG / 2 + PSEG * j, w = platW(i, s); inst(proof, pri++, sd * (PLAT_EDGE + w / 2), 4.0, s, 0, (w + 0.4) / 4.8); }
-    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { const w = platW(i, s); inst(ribs, ri++, sd * (PLAT_EDGE + w / 2), 3.9, s, 0, (w + 0.4) / 4.8); }
+    if (isl) islBuild(tp);
+    for (let j = 0; j < NRF && !isl; j++) { const s = tp - 143 + PSEG / 2 + PSEG * j, w = platW(i, s); inst(proof, pri++, isl ? oppLx(s) / 2 : sd * (PLAT_EDGE + w / 2), 4.0, s, isl ? islY(s) : 0, (w + 0.4) / 4.8, 1, isl ? islZ(s) : 1); }
+    for (let s = tp - PL + 8; s <= tp - 14; s += 6) { const w = isl ? oppLx(s) - 2 * PLAT_EDGE : platW(i, s); inst(ribs, ri++, isl ? oppLx(s) / 2 : sd * (PLAT_EDGE + w / 2), 3.9, s, isl ? islY(s) : 0, (w + 0.4) / 4.8); }
     if (!isl) {                                                       // 相対式ホームの駅: 対向線路の外側にも側ホーム
       for (let j = 0; j < NPS; j++) {
         const s = tp - PLAT_BACK + PSEG / 2 + PSEG * j, lo = oppLx(s), W = platW(i, s), c = lo + PLAT_EDGE + W / 2;
@@ -810,7 +852,7 @@ function buildWorld() {
       put(new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.4), distM[di]), sd * 1.95, 1.62, tp - d + 0.04);
       inst(dposts, dpi++, sd * 1.98, 1.28, tp - d + 0.05);
     });
-    for (let s = tp - PL + 12; s <= tp - 8; s += 12) inst(posts, pi++, isl ? sd * (PLAT_EDGE + platW(i, s) / 2) : sd * 5.3, 2.5, s);
+    for (let s = tp - PL + 12; s <= tp - 8; s += 12) inst(posts, pi++, isl ? oppLx(s) / 2 : sd * 5.3, 2.5, s);
     // 駅名標
     for (const off of [100, 35]) {
       const sc = document.createElement('canvas'); sc.width = 512; sc.height = 160;
@@ -872,7 +914,7 @@ function buildWorld() {
         if (j > 2 && j < NSD - 4) inst(proof, pri++, c, 4.0, s, 0, (W + 0.4) / 4.8);
       }
     }
-    for (let s = tp - DTS.back + 12; s <= tp - 8; s += 12) for (const k of [-1, 1]) inst(posts, pi++, (k < 0 ? DTS.down(s) : DTS.up(s)) + k * (PLAT_EDGE + 0.3), 2.5, s);
+    for (let s = tp - DTS.back + 12; s <= tp - 8; s += 12) for (const k of [-1, 1]) inst(posts, pi++, (k < 0 ? DTS.down(s) : DTS.up(s)) + k * (PLAT_EDGE + W - 0.5), 2.5, s);
     const dm2 = dtSign(d), dg2 = new THREE.PlaneGeometry(1.8, 0.56);
     for (const off of [150, 60]) {
       put(new THREE.Mesh(dg2, dm2), DTS.down(tp - off) - PLAT_EDGE - 0.25, 2.5, tp - off, Math.PI / 2);
@@ -941,6 +983,7 @@ function buildWorld() {
   })();
   posts.count = pi; scene.add(posts);
   ribs.count = ri; scene.add(ribs); marks.count = mki; scene.add(marks); dposts.count = dpi; scene.add(dposts);
+  window.__pr = proof; window.__islY = islY; window.__oppLx = oppLx;
   pbase.count = pbi; ptop.count = pbi; ptact.count = tci; proof.count = pri;
   [pbase, ptop, ptact, proof].forEach((m) => scene.add(m));
 }
