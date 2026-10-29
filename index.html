@@ -672,7 +672,7 @@ function buildWorld() {
       if (isBr) {                                                // 分岐線: 本線との距離dに応じて描く。外側のレールは分岐点(d=0)で本線のレールとぴったり重なり、先端がつながる
         const m = Math.abs(lo) < Math.abs(lo - op) ? 0 : op, d = lo - m, sg = d >= 0 ? 1 : -1;
         inst(railsX, rxi++, lo + sg * 0.72, 0.08, s, yw, 1, 1, zs);
-        if (Math.abs(d) > 1.3) inst(railsX, rxi++, lo - sg * 0.72, 0.08, s, yw, 1, 1, zs);
+        inst(railsX, rxi++, lo - sg * 0.72, 0.08, s, yw, 1, 1, zs);          // 内側のレールも分岐点から描く(先端は本線の内側レールと重なる)
         if (Math.abs(d) < 0.12) continue;                        // 本線とぴったり重なる区間は道床・架線を省く
         inst(ballastX, xi, lo, 0.012, s, yw, 1, 1, zs); inst(wiresX, xi, lo, 5.1, s, yw, 1, 1, zs); xi++;
       } else {
@@ -923,7 +923,7 @@ function buildWorld() {
   });
   [DTS.stns[0], DTS.stns[3]].forEach((d) => {                       // 二子玉川・溝の口: 田園都市線列車(10両)のためホームを後方へ延長
     const tp = d.tp, dm2 = dtSign(d);
-    for (let s = tp - 202.5; s < tp - PLAT_BACK; s += PSEG) for (const k of [-1, 1]) {
+    for (let s = tp - 205 + PSEG / 2; s < tp - PLAT_BACK; s += PSEG) for (const k of [-1, 1]) {
       const c = k < 0 ? -(PLAT_EDGE + 4) : oppLx(s) + PLAT_EDGE + 4;
       inst(pbase, pbi, c, 0.5, s, 0, 8 / 4.4); inst(ptop, pbi, c, 1.004, s, 0, 8 / 4.4); pbi++;
       inst(ptact, tci++, k < 0 ? -(PLAT_EDGE + 7.6) : oppLx(s) + PLAT_EDGE + 7.6, 1.008, s);
