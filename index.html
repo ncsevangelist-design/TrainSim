@@ -543,40 +543,32 @@ const Z = (s) => -s;
 /* ============ 線形(島式ホーム) ============ */
 // 島式ホームは両端が約3m・中央が約10mの細長い楕円形。
 // 線路はホームに沿って横へ膨らみ(進行方向に左→右→左のカーブ)、通過後に元の軌道へ戻る。
-const ISL_PRE = 165, ISL_LEN = 185;                 // 膨らみ区間: 停止位置の165m手前から185m
+const ISL_LEN = 238, ISL_DT = 9.6;                  // 膨らみ区間の長さと、ホーム中央での2線路の広がり量(下り+上り)。一つのなめらかな山で膨らむ
 const PLAT_BACK = 150, PLAT_FWD = 5;                // ホーム: 停止位置の150m手前〜5m先(7両=140m + 余裕)
 const PLAT_END_W = 3, PLAT_MID_W = 10, PLAT_EDGE = 1.7, PLAT_STD_W = 4.4;
 const ISL = {};                                     // 駅番号 → 島式ホームの形状
 STATIONS.forEach((st, i) => {
   if (st.side !== 1) return;
   const tp = stationPos(i);
-  const bEnd = Math.pow(Math.sin(Math.PI * (ISL_PRE - PLAT_BACK) / ISL_LEN), 2);   // ホーム端での膨らみ量
-  ISL[i] = { a: tp - ISL_PRE, bEnd: bEnd, D: ((PLAT_MID_W - PLAT_END_W) / 2) / (1 - bEnd) };
+  const mid = tp + (PLAT_FWD - PLAT_BACK) / 2, only = st.n === '等々力';           // 等々力は上り線が直線で、下り線だけが膨らむ
+  ISL[i] = { a: mid - ISL_LEN / 2, bEnd: (ISL_DT - (PLAT_MID_W - PLAT_END_W)) / ISL_DT, Dd: only ? ISL_DT : ISL_DT / 2, Du: only ? 0 : ISL_DT / 2 };
 });
 function islB(o, s) { const t = (s - o.a) / ISL_LEN; return (t <= 0 || t >= 1) ? 0 : Math.pow(Math.sin(Math.PI * t), 2); }
-function islD1(o, s) { const t = (s - o.a) / ISL_LEN; return (t <= 0 || t >= 1) ? 0 : o.D * Math.PI / ISL_LEN * Math.sin(2 * Math.PI * t); }
+function islD1(o, s) { const t = (s - o.a) / ISL_LEN; return (t <= 0 || t >= 1) ? 0 : o.Dd * Math.PI / ISL_LEN * Math.sin(2 * Math.PI * t); }
 function P(s) {                                     // 線路中心線(横ずれと向き)。ホームの膨らみ分だけ左へ
   let x = 0, d1 = 0;
-  for (const k in ISL) { const o = ISL[k]; x -= o.D * islB(o, s); d1 -= islD1(o, s); }
+  for (const k in ISL) { const o = ISL[k]; x -= o.Dd * islB(o, s); d1 -= islD1(o, s); }
   return { x: x, z: -s, psi: Math.atan(d1) };
 }
 function platW(i, s) {                              // ホームの幅(島式は中央で膨らむ)
   const o = ISL[i]; if (!o) return EXT[i] ? EXT[i].W : PLAT_STD_W;
-  return Math.max(PLAT_END_W, PLAT_END_W + 2 * o.D * (islB(o, s) - o.bEnd));
+  return Math.max(PLAT_END_W, PLAT_END_W + ISL_DT * (islB(o, s) - o.bEnd));
 }
-function platWs(i, s) {                             // 対向線路の位置用に、ホーム幅の折れ点をなめらかにした幅(線路が急に横へ折れないように)
-  const o = ISL[i], x = islB(o, s) - o.bEnd;
-  return PLAT_END_W + 2 * o.D * (x + Math.sqrt(x * x + 0.0144)) / 2;
-}
-const OPP_STD = 3.8, OPP_RAMP = 70;                // 対向線路との間隔(通常3.8m)。島式ホームの駅では広がる
+const OPP_STD = 3.8;                // 対向線路との間隔(通常3.8m)。島式ホームの駅では広がる
 const sstep = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 function oppLx(s) {                                 // 対向線路の中心(自列車の線路中心からの横位置)
   let lx = OPP_STD;
-  for (const k in ISL) {
-    const tp = stationPos(+k);
-    const g = sstep((s - (tp - PLAT_BACK - OPP_RAMP)) / OPP_RAMP) * sstep(((tp + PLAT_FWD + OPP_RAMP) - s) / OPP_RAMP);
-    if (g > 0) lx += g * (PLAT_EDGE * 2 + platWs(+k, s) - OPP_STD);
-  }
+  for (const k in ISL) lx += ISL_DT * islB(ISL[k], s);                 // 上り線は下り線と同じ山の形で、両側へなめらかに広がる
   return lx;
 }
 /* ===== 並走・分岐する線路 =====
